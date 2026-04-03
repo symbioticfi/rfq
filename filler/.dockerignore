@@ -1,7 +1,0 @@
-node_modules
-dist
-coverage
-test
-.env
-.env.local
-pnpm-debug.log*
