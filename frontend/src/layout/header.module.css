@@ -1,0 +1,512 @@
+.header {
+  --header-trigger-height: 42px;
+  --header-panel-gap: 12px;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px var(--space-6) 4px;
+  background-color: var(--color-header-bg);
+  backdrop-filter: blur(12px);
+  border-bottom: none;
+}
+
+.brandMenuWrapper,
+.walletWrapper {
+  position: relative;
+}
+
+.brandMenuWrapper {
+  margin-left: 0;
+  transform: translateY(3px);
+}
+
+.brandButton,
+.walletButton {
+  display: flex;
+  align-items: center;
+  min-height: var(--header-trigger-height);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  background-color: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  letter-spacing: 0.04em;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.brandButton {
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+  transition: color var(--transition-fast);
+}
+
+.walletButton:hover {
+  background-color: var(--color-surface-hover);
+}
+
+.brandButton:hover {
+  background-color: transparent;
+}
+
+.lockupFrame {
+  width: 208px;
+  height: 38px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.lockup {
+  display: block;
+  height: 72px;
+  width: auto;
+  margin: -17px -18px -17px -18px;
+}
+
+.brandButtonChevron {
+  margin-left: -50px;
+  color: var(--color-text-secondary);
+  transition:
+    transform var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.brandButton:hover .brandButtonChevron {
+  color: var(--color-text-primary);
+}
+
+.brandButtonChevronOpen {
+  transform: rotate(180deg);
+}
+
+.brandMenu {
+  position: absolute;
+  top: calc(100% + var(--header-panel-gap));
+  left: 0;
+  width: min(228px, calc(100vw - 20px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background-color: var(--color-floating-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-floating);
+  animation: menuFade 140ms ease-out;
+}
+
+.brandMenuLinks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.brandMenuTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.brandMenuLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.brandMenuLink:hover {
+  color: var(--color-text-primary);
+}
+
+.brandMenuPrimaryLink {
+  flex: 1;
+  min-width: 0;
+}
+
+.brandMenuDivider {
+  height: 1px;
+  background-color: var(--color-border);
+}
+
+.brandMenuSocials {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.brandMenuSocialLink,
+.walletMenuAction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-md);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.brandMenuSocialLink {
+  width: 22px;
+  height: 22px;
+}
+
+.walletMenuAction {
+  position: relative;
+  width: 24px;
+  height: 20px;
+}
+
+.walletMenuAction::before {
+  content: "";
+  position: absolute;
+  inset: -12px;
+}
+
+.menuIcon {
+  display: block;
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+}
+
+.brandMenuSocialIcon {
+  width: 16px;
+  height: 16px;
+}
+
+.socialIconX {
+  transform: scale(0.92);
+}
+
+.socialIconTelegram {
+  transform: scale(0.95);
+}
+
+.socialIconGithub {
+  transform: scale(1.05);
+}
+
+.brandMenuSocialLink:hover,
+.walletMenuAction:hover {
+  color: var(--color-text-primary);
+}
+
+.walletMenuAction:hover {
+  background-color: transparent;
+}
+
+.themeSwitcher {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  margin-top: 4px;
+  padding: 2px;
+  background-color: var(--color-theme-switcher-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+.themeButton {
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-secondary);
+  border-radius: calc(var(--radius-full) - 4px);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.themeButton:hover {
+  color: var(--color-text-primary);
+}
+
+.themeButtonActive {
+  color: var(--color-text-primary);
+  background-color: var(--color-theme-switcher-active);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  transform: translateY(3px);
+}
+
+.devLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--header-trigger-height);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-full);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+}
+
+.devLink:hover {
+  color: var(--color-text-primary);
+  background-color: var(--color-surface-hover);
+}
+
+.connectButton {
+  min-height: var(--header-trigger-height);
+  padding: var(--space-2) var(--space-5);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--color-accent-bright);
+  background-color: var(--color-accent-dark);
+  border-radius: var(--radius-md);
+  transition: background-color var(--transition-fast);
+  letter-spacing: 0.02em;
+}
+
+.connectButton:hover {
+  background-color: var(--color-accent-dark-hover);
+}
+
+.connectButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.walletIcon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.walletMenu {
+  position: absolute;
+  top: calc(100% + var(--header-panel-gap));
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  min-width: 296px;
+  padding: 16px 18px;
+  background-color: var(--color-floating-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-floating);
+  animation: menuFade 120ms ease-out;
+  white-space: nowrap;
+}
+
+.walletMenuCurrentRow,
+.walletMenuSectionRow,
+.walletMenuWalletRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.walletMenuCurrentRow {
+  gap: 0;
+}
+
+.walletMenuCurrentWallet,
+.walletMenuWalletButton,
+.walletMenuWalletCopyButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.walletMenuCurrentWallet {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.walletMenuCurrentWallet:hover + .walletMenuActions .walletMenuActionCopy,
+.walletMenuCurrentWallet:focus-visible + .walletMenuActions .walletMenuActionCopy,
+.walletMenuWalletButton:hover + .walletMenuActionCopy,
+.walletMenuWalletButton:focus-visible + .walletMenuActionCopy {
+  color: var(--color-text-primary);
+}
+
+.walletMenuAddress {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  letter-spacing: 0.04em;
+}
+
+.walletMenuDivider {
+  height: 1px;
+  background-color: var(--color-border);
+}
+
+.walletMenuSectionRow {
+  justify-content: flex-start;
+  gap: 0;
+  margin-top: 4px;
+}
+
+.walletMenuSectionTrigger {
+  padding: 0;
+  color: var(--color-text-secondary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.walletMenuSectionTrigger:hover + .walletMenuActionSwitch,
+.walletMenuSectionTrigger:focus-visible + .walletMenuActionSwitch {
+  color: var(--color-text-primary);
+}
+
+.walletMenuSectionRow .walletMenuActionSwitch {
+  justify-content: flex-end;
+}
+
+.walletMenuSectionLabel,
+.walletMenuSectionTrigger {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.walletMenuWalletList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.walletMenuWalletRow {
+  gap: 0;
+}
+
+.walletMenuWalletButton {
+  font-size: var(--font-size-sm);
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.04em;
+}
+
+.walletMenuWalletButton:hover,
+.walletMenuWalletButton:focus-visible {
+  color: var(--color-text-primary);
+}
+
+.walletMenuWalletCopyButton {
+  font-size: var(--font-size-sm);
+  flex: 1;
+  min-width: 0;
+  color: var(--color-text-primary);
+  letter-spacing: 0.04em;
+}
+
+.walletMenuWalletCopyButton:hover,
+.walletMenuWalletCopyButton:focus-visible {
+  color: var(--color-text-primary);
+}
+
+.walletMenuWalletCopyIcon {
+  margin-left: 4px;
+  color: var(--color-text-secondary);
+}
+
+.walletMenuWalletCopyButton:hover .walletMenuWalletCopyIcon,
+.walletMenuWalletCopyButton:focus-visible .walletMenuWalletCopyIcon {
+  color: var(--color-text-primary);
+}
+
+.walletMenuActions {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.walletMenuCurrentRow .walletMenuActionCopy {
+  justify-content: flex-end;
+  margin-right: auto;
+}
+
+.walletMenuActionDisconnect {
+  margin-left: 8px;
+}
+
+.walletMenuActionSwitchRight {
+  margin-left: 8px;
+}
+
+@keyframes menuFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 720px) {
+  .header {
+    --header-trigger-height: 44px;
+    --header-panel-gap: 8px;
+    padding: 6px var(--space-4) 4px;
+  }
+
+  .brandMenuWrapper {
+    margin-left: 0;
+    transform: translateY(2px);
+  }
+
+  .lockupFrame {
+    width: 176px;
+    height: 32px;
+  }
+
+  .lockup {
+    height: 60px;
+    margin: -14px -15px -14px -16px;
+  }
+
+  .brandMenu {
+    left: 0;
+    width: min(220px, calc(100vw - 18px));
+    padding: 12px;
+    border-radius: 15px;
+  }
+
+  .brandMenuLink {
+    font-size: 13px;
+  }
+
+  .actions {
+    transform: translateY(2px);
+  }
+}

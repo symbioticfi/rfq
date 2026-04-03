@@ -1,0 +1,115 @@
+.popover {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 10;
+  width: 300px;
+  padding: var(--space-4);
+  background-color: var(--color-floating-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-floating);
+  animation: fadeIn 120ms ease-out;
+  overscroll-behavior: contain;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.section + .section {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.sectionLabel {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Segmented control */
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  background-color: var(--color-theme-switcher-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  padding: 2px;
+  gap: 2px;
+}
+
+.segment {
+  min-width: 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  background: transparent;
+  border-radius: calc(var(--radius-full) - 4px);
+  transition:
+    color var(--transition-fast),
+    background-color var(--transition-fast);
+  font-feature-settings: "tnum" 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.segment:hover {
+  color: var(--color-text-primary);
+}
+
+.segment.active {
+  color: var(--color-text-primary);
+  background-color: var(--color-theme-switcher-active);
+}
+
+/* Custom segment with inline input */
+.customSegment {
+  gap: 2px;
+  padding: 0 8px;
+}
+
+.inlineCustomInput {
+  width: 34px;
+  padding: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  font-feature-settings: "tnum" 1;
+  caret-color: var(--color-accent);
+  text-align: right;
+  cursor: pointer;
+}
+
+.inlineCustomInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+.inlineCustomInput:focus {
+  cursor: text;
+}
+
+.inlineSuffix {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-primary);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

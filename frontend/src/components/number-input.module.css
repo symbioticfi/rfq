@@ -1,0 +1,30 @@
+.input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  font-size: var(--font-size-2xl);
+  font-weight: 400;
+  color: var(--color-text-primary);
+  text-align: left;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.02em;
+  caret-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input:focus {
+  cursor: text;
+}
+
+.input:read-only {
+  cursor: default;
+}
+
+.input:disabled {
+  opacity: 0.4;
+}

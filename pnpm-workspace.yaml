@@ -1,0 +1,17 @@
+packages:
+  - frontend
+  - backend
+  - indexer
+  - filler
+  - integration
+
+onlyBuiltDependencies:
+  - '@reown/appkit'
+  - esbuild
+  - sharp
+  - workerd
+
+# Security
+registrySupportsTimeField: true
+resolutionMode: time-based
+minimumReleaseAge: 1440 # 1 day

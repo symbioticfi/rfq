@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://symbiotic.fi/rfq/contracts/v1/solver-quote-response.schema.json",
+  "title": "SolverQuoteResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "chainId",
+    "amountIn",
+    "amountOut",
+    "filler",
+    "requestId",
+    "swapper",
+    "tokenIn",
+    "tokenOut",
+    "quoteId"
+  ],
+  "properties": {
+    "chainId": { "type": "integer", "minimum": 1 },
+    "amountIn": { "type": "string", "pattern": "^\\d+$" },
+    "amountOut": { "type": "string", "pattern": "^\\d+$" },
+    "filler": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+    "requestId": { "type": "string", "format": "uuid" },
+    "swapper": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+    "tokenIn": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+    "tokenOut": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+    "quoteId": { "type": "string", "format": "uuid" }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://symbiotic.fi/rfq/contracts/v1/filler-notify.schema.json",
+  "title": "FillerNotifyV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["orderId", "createdAt", "orderStatus", "chainId"],
+  "properties": {
+    "orderId": { "type": "string", "format": "uuid" },
+    "createdAt": { "type": "integer", "minimum": 0 },
+    "signature": { "type": "string", "pattern": "^0x[a-fA-F0-9]+$" },
+    "orderStatus": { "type": "string", "minLength": 1 },
+    "encodedOrder": { "type": "string", "pattern": "^0x[a-fA-F0-9]+$" },
+    "chainId": { "type": "integer", "minimum": 1 },
+    "filler": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+    "quoteId": { "type": "string", "format": "uuid" },
+    "offerer": { "type": "string", "pattern": "^0x[a-fA-F0-9]{40}$" },
+    "type": { "type": "string" }
+  }
+}

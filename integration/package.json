@@ -1,0 +1,16 @@
+{
+  "name": "@symbiotic/rfq-integration",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.24.0",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "test": "node ./scripts/run-tests.mjs",
+    "check": "pnpm run test",
+    "local:dev": "node ./scripts/local/dev.mjs local",
+    "local:stop": "node ./scripts/local/stop.mjs local",
+    "hoodi:dev": "node ./scripts/local/dev.mjs hoodi",
+    "hoodi:stop": "node ./scripts/local/stop.mjs hoodi",
+    "local:verify": "node ./scripts/verify-local-flow.mjs"
+  }
+}

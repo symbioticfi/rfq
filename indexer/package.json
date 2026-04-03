@@ -1,0 +1,34 @@
+{
+    "name": "@symbiotic/rfq-indexer",
+    "private": true,
+    "type": "module",
+    "packageManager": "pnpm@10.24.0",
+    "scripts": {
+        "sync:deployment": "node ./scripts/sync-deployment.mjs",
+        "dev": "pnpm run sync:deployment && ponder dev --schema rfq_indexer",
+        "start": "sh -c 'pnpm run sync:deployment && ponder start --schema rfq_indexer --views-schema rfq_indexer_views --port ${PORT:-42071}'",
+        "db": "ponder db",
+        "codegen": "ponder codegen",
+        "serve": "sh -c 'pnpm run sync:deployment && ponder serve --schema rfq_indexer --port ${PORT:-42071}'",
+        "build": "pnpm run sync:deployment && tsc -p tsconfig.json",
+        "test": "vitest run",
+        "check": "pnpm run build && pnpm run test",
+        "format": "prettier . --write",
+        "format:check": "prettier . --check"
+    },
+    "dependencies": {
+        "dotenv": "^17.3.1",
+        "hono": "^4.12.9",
+        "pino": "^10.3.1",
+        "ponder": "^0.16.6",
+        "viem": "^2.47.6",
+        "zod": "^4.3.6"
+    },
+    "devDependencies": {
+        "@types/node": "^25.5.0",
+        "prettier": "^3.8.1",
+        "typescript": "^6.0.2",
+        "vite": "^8.0.3",
+        "vitest": "^4.1.2"
+    }
+}

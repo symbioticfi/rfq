@@ -1,0 +1,26 @@
+.wrapper {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  z-index: 2;
+  margin: -16.5px 0;
+}
+
+.indicator {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-surface);
+  border: 3px solid var(--color-bg);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  box-shadow: var(--shadow-card);
+  cursor: default;
+  transition: color var(--transition-fast);
+}
+
+.indicator:hover {
+  color: var(--color-accent);
+}

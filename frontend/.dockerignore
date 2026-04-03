@@ -1,0 +1,10 @@
+node_modules
+build
+.react-router
+.vercel
+coverage
+test
+.env
+.env.local
+pnpm-debug.log*
+tsconfig.tsbuildinfo
