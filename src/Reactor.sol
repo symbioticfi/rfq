@@ -102,14 +102,12 @@ contract Reactor is EIP712, IReactor {
             if (swapInputs[i].tokenIn != order.request.tokenIn) {
                 revert InvalidTokenIn();
             }
-
             totalAmountIn += swapInputs[i].amountIn;
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
             if (discountSwapInputs[i].discountSwap.discount.tokenToRedeem != order.request.tokenIn) {
                 revert InvalidTokenIn();
             }
-
             totalAmountIn += discountSwapInputs[i].amountIn;
         }
         if (totalAmountIn != order.request.amountIn) {
