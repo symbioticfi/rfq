@@ -7,7 +7,7 @@ import {IReactor} from "./IReactor.sol";
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
 
-// Keccak256("CALLER_ROLE").
+// keccak256("CALLER_ROLE")
 bytes32 constant CALLER_ROLE = 0x74a23095bc1d81f421b8f4e555b0abbafaf53263fb97dffca9f89a4ca3115d41;
 
 /**
@@ -18,14 +18,14 @@ interface IExecutor is IAccessControl {
     /* ERRORS */
 
     /**
-     * @notice Raised when the caller is not the Reactor.
-     */
-    error NotReactor();
-
-    /**
      * @notice Raised when the caller does not have the required role.
      */
     error NotCaller();
+
+    /**
+     * @notice Raised when the caller is not the Reactor.
+     */
+    error NotReactor();
 
     /* STRUCTS */
 

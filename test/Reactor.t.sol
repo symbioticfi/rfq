@@ -286,11 +286,7 @@ contract ReactorTest is Test {
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
         IInstantRedemptionAdapter.Swap memory swap = IInstantRedemptionAdapter.Swap({
-            recipient: filler,
-            vault: vault0,
-            tokenIn: address(otherRwa),
-            amountIn: 5 ether,
-            amountOut: 5 ether
+            recipient: filler, vault: vault0, tokenIn: address(otherRwa), amountIn: 5 ether, amountOut: 5 ether
         });
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -330,11 +326,7 @@ contract ReactorTest is Test {
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
         IInstantRedemptionAdapter.Swap memory swap = IInstantRedemptionAdapter.Swap({
-            recipient: filler,
-            vault: vault0,
-            tokenIn: address(rwa),
-            amountIn: 4 ether,
-            amountOut: 5 ether
+            recipient: filler, vault: vault0, tokenIn: address(rwa), amountIn: 4 ether, amountOut: 5 ether
         });
 
         IReactor.Order memory order = _order(outputs, 5 ether);
@@ -490,11 +482,7 @@ contract ReactorTest is Test {
         returns (IInstantRedemptionAdapter.Swap memory)
     {
         return IInstantRedemptionAdapter.Swap({
-            recipient: filler,
-            vault: vault,
-            tokenIn: address(rwa),
-            amountIn: amountIn,
-            amountOut: amountOut
+            recipient: filler, vault: vault, tokenIn: address(rwa), amountIn: amountIn, amountOut: amountOut
         });
     }
 
