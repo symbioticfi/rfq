@@ -4,18 +4,23 @@ pragma solidity ^0.8.0;
 
 import {IInstantRedemptionAdapter} from "./IInstantRedemptionAdapter.sol";
 
+/* Sentinel address used to represent native asset outputs. */
 address constant NATIVE = 0x0000000000000000000000000000000000000000;
 
+/* EIP-712 typehash for Reactor output obligations. */
 bytes32 constant OUTPUT_TYPEHASH = keccak256("Output(address token,uint256 amount,address recipient)");
+/* EIP-712 typehash for Reactor requests. */
 bytes32 constant REQUEST_TYPEHASH = keccak256(
     "Request(address tokenIn,uint256 amountIn,Output[] outputs,uint256 deadline,uint256 nonce,address protocol)"
     "Output(address token,uint256 amount,address recipient)"
 );
+/* EIP-712 typehash for Reactor orders. */
 bytes32 constant ORDER_TYPEHASH = keccak256(
     "Order(Request request,bytes swapperSignature,address swapper,address filler)"
     "Output(address token,uint256 amount,address recipient)"
     "Request(address tokenIn,uint256 amountIn,Output[] outputs,uint256 deadline,uint256 nonce,address protocol)"
 );
+/* Permit2 witness type string for Reactor requests. */
 string constant REQUEST_WITNESS_TYPE_STRING = "Request witness)Output(address token,uint256 amount,address recipient)"
     "Request(address tokenIn,uint256 amountIn,Output[] outputs,uint256 deadline,uint256 nonce,address protocol)"
     "TokenPermissions(address token,uint256 amount)";

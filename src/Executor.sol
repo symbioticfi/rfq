@@ -20,17 +20,13 @@ contract Executor is AccessControl, IExecutor {
 
     /* IMMUTABLES */
 
-    /// @notice Reactor that is allowed to trigger execution callbacks.
+    /// @dev Reactor that is allowed to trigger execution callbacks.
     address internal immutable REACTOR;
-    /// @notice Instant redemption adapter used for swap execution.
+    /// @dev Instant redemption adapter used for swap execution.
     address internal immutable IR_ADAPTER;
 
     /* CONSTRUCTOR */
 
-    /// @notice Creates the executor.
-    /// @param reactor The Reactor contract.
-    /// @param irAdapter The instant redemption adapter.
-    /// @param admin The initial admin.
     constructor(address reactor, address irAdapter, address admin) {
         REACTOR = reactor;
         IR_ADAPTER = irAdapter;
@@ -40,6 +36,7 @@ contract Executor is AccessControl, IExecutor {
 
     /* MODIFIERS */
 
+    /// @dev Reverts unless the caller has the caller role.
     modifier onlyCaller() {
         if (!hasRole(CALLER_ROLE, msg.sender)) {
             revert NotCaller();
@@ -48,7 +45,7 @@ contract Executor is AccessControl, IExecutor {
         _;
     }
 
-    /* EXTERNAL FUNCTIONS */
+    /* PUBLIC FUNCTIONS */
 
     /// @inheritdoc IExecutor
     function fill(
@@ -96,13 +93,14 @@ contract Executor is AccessControl, IExecutor {
             IInstantRedemptionAdapter(IR_ADAPTER).swap(swapInputs[i]);
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
-            IInstantRedemptionAdapter(IR_ADAPTER).swap(
-                discountSwapInputs[i].discountSwap,
-                discountSwapInputs[i].protocolSignature,
-                discountSwapInputs[i].recipient,
-                discountSwapInputs[i].amountIn,
-                discountSwapInputs[i].amountOut
-            );
+            IInstantRedemptionAdapter(IR_ADAPTER)
+                .swap(
+                    discountSwapInputs[i].discountSwap,
+                    discountSwapInputs[i].protocolSignature,
+                    discountSwapInputs[i].recipient,
+                    discountSwapInputs[i].amountIn,
+                    discountSwapInputs[i].amountOut
+                );
         }
 
         Call[] memory calls = abi.decode(executorData, (Call[]));

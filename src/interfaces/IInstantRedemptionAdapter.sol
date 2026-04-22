@@ -87,9 +87,9 @@ interface IInstantRedemptionAdapter {
      * @notice Returns the redemption account for a vault and token-to-redeem pair.
      * @param vault Vault address.
      * @param tokenToRedeem Token-to-redeem address.
-     * @return Redemption account address.
+     * @return account Redemption account address.
      */
-    function getAccount(address vault, address tokenToRedeem) external view returns (address);
+    function getAccount(address vault, address tokenToRedeem) external view returns (address account);
 
     /**
      * @notice Releases collateral for a funded vault leg.

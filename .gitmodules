@@ -1,0 +1,13 @@
+[submodule "lib/forge-std"]
+	path = lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "lib/openzeppelin-contracts"]
+	path = lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "lib/solady"]
+	path = lib/solady
+	url = https://github.com/Vectorized/solady
+[submodule "lib/core-mirror"]
+	path = lib/core-mirror
+	url = https://github.com/symbioticfi/core-mirror
+	branch = ir-adapter

@@ -25,16 +25,13 @@ contract Reactor is EIP712, IReactor {
 
     /* IMMUTABLES */
 
-    /// @notice Instant redemption adapter that executes vault swap legs.
+    /// @dev Instant redemption adapter that executes vault swap legs.
     address internal immutable ADAPTER;
-    /// @notice Permit2 contract that transfers the swapper input into the Reactor.
+    /// @dev Permit2 contract that transfers the swapper input into the Reactor.
     address internal immutable PERMIT2;
 
     /* CONSTRUCTOR */
 
-    /// @notice Creates the Reactor.
-    /// @param adapter The instant redemption adapter used for vault legs.
-    /// @param permit2 The Permit2 contract used for input transfer.
     constructor(address adapter, address permit2) {
         ADAPTER = adapter;
         PERMIT2 = permit2;
@@ -105,14 +102,12 @@ contract Reactor is EIP712, IReactor {
             if (swapInputs[i].tokenIn != order.request.tokenIn) {
                 revert InvalidTokenIn();
             }
-
             totalAmountIn += swapInputs[i].amountIn;
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
             if (discountSwapInputs[i].discountSwap.discount.tokenToRedeem != order.request.tokenIn) {
                 revert InvalidTokenIn();
             }
-
             totalAmountIn += discountSwapInputs[i].amountIn;
         }
         if (totalAmountIn != order.request.amountIn) {

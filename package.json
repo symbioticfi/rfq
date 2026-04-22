@@ -1,0 +1,29 @@
+{
+    "name": "@symbioticfi/rfq",
+    "version": "1.0.0",
+    "description": "Symbiotic RFQ settlement contracts for instant redemption flows.",
+    "homepage": "https://symbiotic.fi/",
+    "bugs": "https://github.com/symbioticfi/rfq/issues",
+    "license": "BUSL-1.1",
+    "author": "Symbiotic Team",
+    "files": [
+        "src/**/*",
+        "script/**/*"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/symbioticfi/rfq.git"
+    },
+    "keywords": [
+        "solidity",
+        "ethereum",
+        "smart",
+        "contracts",
+        "rfq",
+        "security"
+    ],
+    "dependencies": {
+        "@openzeppelin/contracts": "5.6.1",
+        "solady": "0.1.26"
+    }
+}
