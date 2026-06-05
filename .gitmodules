@@ -7,3 +7,7 @@
 [submodule "lib/solady"]
 	path = lib/solady
 	url = https://github.com/Vectorized/solady
+[submodule "lib/core-mirror"]
+	path = lib/core-mirror
+	url = https://github.com/symbioticfi/core-mirror
+	branch = ir-adapter

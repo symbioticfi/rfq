@@ -41,7 +41,7 @@ repos:
       - id: forge-snapshots
         name: Update forge snapshots
         language: system
-        entry: bash -lc 'mkdir -p snapshots; forge build; forge build --sizes | tee snapshots/sizes.txt >/dev/null; forge test --isolate --gas-report | tee snapshots/gas.txt >/dev/null'
+        entry: bash -lc 'mkdir -p snapshots; forge build; forge build --sizes | tee snapshots/sizes.txt >/dev/null; forge test --isolate --no-match-contract ReactorMainnetForkTest --no-match-test "testFuzz*" --gas-report | sed -E "/^Suite result:/d;/^Ran [0-9]+ test suite/d" | tee snapshots/gas.txt >/dev/null; perl -0pi -e "s/\n+\z/\n/" snapshots/sizes.txt snapshots/gas.txt'
         pass_filenames: false
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.1.0

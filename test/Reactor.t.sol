@@ -233,6 +233,46 @@ contract ReactorTest is Test {
         assertEq(rwa.balanceOf(vault0Account), 5 ether);
     }
 
+    function testFillForwardsNativeSurplusToReactor() public {
+        vm.deal(address(executor), 3 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: NATIVE, amount: 2 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+        uint256 balanceBefore = swapper.balance;
+
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(swapper.balance, balanceBefore + 2 ether);
+        assertEq(address(executor).balance, 0);
+        assertEq(address(reactor).balance, 1 ether);
+    }
+
+    function testFillEmitsFillEvent() public {
+        outputToken.mint(address(executor), 5 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectEmit(false, false, false, true, address(reactor));
+        emit IReactor.Fill(order);
+
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+    }
+
     function testFillKeepsMaxApproval() public {
         MockApprovalERC20 approvalToken = new MockApprovalERC20("USD", "USD");
         approvalToken.mint(address(executor), 10 ether);
@@ -260,6 +300,33 @@ contract ReactorTest is Test {
         assertEq(approvalToken.balanceOf(swapper), 10 ether);
     }
 
+    function testFillApprovesMultipleOutputTokens() public {
+        MockApprovalERC20 firstToken = new MockApprovalERC20("USD1", "USD1");
+        MockApprovalERC20 secondToken = new MockApprovalERC20("USD2", "USD2");
+        firstToken.mint(address(executor), 5 ether);
+        secondToken.mint(address(executor), 7 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](2);
+        outputs[0] = IReactor.Output({token: address(firstToken), amount: 5 ether, recipient: swapper});
+        outputs[1] = IReactor.Output({token: address(secondToken), amount: 7 ether, recipient: referrer});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 12 ether, 12 ether);
+
+        IReactor.Order memory order = _order(outputs, 12 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(firstToken.allowance(address(executor), address(reactor)), type(uint256).max);
+        assertEq(secondToken.allowance(address(executor), address(reactor)), type(uint256).max);
+        assertEq(firstToken.approveCalls(), 1);
+        assertEq(secondToken.approveCalls(), 1);
+        assertEq(firstToken.balanceOf(swapper), 5 ether);
+        assertEq(secondToken.balanceOf(referrer), 7 ether);
+    }
+
     function testFillUsesRequestProtocol() public {
         outputToken.mint(address(executor), 5 ether);
 
@@ -282,6 +349,25 @@ contract ReactorTest is Test {
         vm.stopPrank();
 
         assertEq(outputToken.balanceOf(swapper), 5 ether);
+    }
+
+    function testFillRejectsSignatureAfterOutputMutation() public {
+        outputToken.mint(address(executor), 6 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        order.request.outputs[0].amount = 6 ether;
+
+        vm.expectRevert(IReactor.InvalidProtocolSignature.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
     }
 
     function testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() public {
@@ -453,6 +539,90 @@ contract ReactorTest is Test {
         vm.expectRevert(IReactor.InvalidAmountIn.selector);
         vm.prank(filler);
         executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
+    }
+
+    function testFuzzFillRevertsIfSingleSwapAmountDoesNotMatchOrderAmount(uint96 orderAmount, uint96 swapAmount)
+        public
+    {
+        orderAmount = uint96(bound(orderAmount, 1, 50 ether));
+        swapAmount = uint96(bound(swapAmount, 0, 50 ether));
+        vm.assume(orderAmount != swapAmount);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](0);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, swapAmount, swapAmount);
+
+        IReactor.Order memory order = _order(outputs, orderAmount);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(IReactor.InvalidAmountIn.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+    }
+
+    function testFillRevertsAndRollsBackIfExecutorDataIsMalformed() public {
+        outputToken.mint(address(executor), 5 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert();
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, hex"01");
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+        assertEq(rwa.balanceOf(address(adapter)), 0);
+        assertEq(outputToken.balanceOf(swapper), 0);
+    }
+
+    function testFillRevertsAndRollsBackIfExecutorCallFails() public {
+        outputToken.mint(address(executor), 5 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](1);
+        calls[0] = IExecutor.Call({
+            target: address(callTarget), value: 0, data: abi.encodeWithSelector(MockCallTarget.revertAlways.selector)
+        });
+        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert();
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+        assertEq(rwa.balanceOf(address(adapter)), 0);
+        assertEq(outputToken.balanceOf(swapper), 0);
+        assertEq(callTarget.calls(), 0);
+    }
+
+    function testFillRevertsAndRollsBackIfAdapterFails() public {
+        outputToken.mint(address(executor), 5 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IInstantRedemptionAdapter.Swap memory swap = _swap(makeAddr("missingVault"), 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(bytes("missing rwa"));
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+        assertEq(rwa.balanceOf(address(adapter)), 0);
+        assertEq(outputToken.balanceOf(swapper), 0);
     }
 
     function testExecuteRevertsWhenCallerIsNotReactor() public {
@@ -650,15 +820,15 @@ contract MockAdapter is IInstantRedemptionAdapter {
     uint256 public signedSwapCount;
     uint256 public discountSwapCount;
 
-    function setAccount(address vault, address token, address account) external {
+    function setAccount(address vault, address token, address account) public {
         _accounts[vault][token] = account;
     }
 
-    function getAccount(address vault, address token) external view returns (address) {
+    function getAccount(address vault, address token) public view returns (address) {
         return _accounts[vault][token];
     }
 
-    function swap(IInstantRedemptionAdapter.Swap calldata swap) external {
+    function swap(IInstantRedemptionAdapter.Swap calldata swap) public {
         address account = _accounts[swap.vault][swap.tokenIn];
         uint256 balance = ERC20(swap.tokenIn).balanceOf(address(this));
         require(account != address(0) && balance >= swap.amountIn, "missing rwa");
@@ -666,7 +836,7 @@ contract MockAdapter is IInstantRedemptionAdapter {
         ++swapCount;
     }
 
-    function swap(IInstantRedemptionAdapter.SignedSwap calldata signedSwap, bytes calldata) external {
+    function swap(IInstantRedemptionAdapter.SignedSwap calldata signedSwap, bytes calldata) public {
         address account = _accounts[signedSwap.vault][signedSwap.tokenIn];
         uint256 balance = ERC20(signedSwap.tokenIn).balanceOf(address(this));
         require(account != address(0) && balance >= signedSwap.amountIn, "missing rwa");
@@ -680,7 +850,7 @@ contract MockAdapter is IInstantRedemptionAdapter {
         address recipient,
         uint256 amountIn,
         uint256
-    ) external {
+    ) public {
         address account = _accounts[discountSwap.discount.vault][discountSwap.discount.tokenToRedeem];
         uint256 balance = ERC20(discountSwap.discount.tokenToRedeem).balanceOf(address(this));
         require(account != address(0) && balance >= amountIn, "missing rwa");
@@ -695,7 +865,7 @@ contract MockAdapter is IInstantRedemptionAdapter {
 contract MockERC20 is ERC20 {
     constructor(string memory name_, string memory symbol_) ERC20(name_, symbol_) {}
 
-    function mint(address to, uint256 amount) external {
+    function mint(address to, uint256 amount) public {
         _mint(to, amount);
     }
 }
@@ -719,7 +889,7 @@ contract MockPermit2 is IPermit2 {
         bytes32,
         string calldata,
         bytes calldata
-    ) external {
+    ) public {
         require(permit.permitted.amount == transferDetails.requestedAmount, "invalid amount");
         ERC20(permit.permitted.token).transferFrom(owner, transferDetails.to, transferDetails.requestedAmount);
     }
@@ -729,8 +899,12 @@ contract MockCallTarget {
     uint256 public calls;
     uint256 public lastValue;
 
-    function record(uint256 value) external payable {
+    function record(uint256 value) public payable {
         ++calls;
         lastValue = value;
+    }
+
+    function revertAlways() public pure {
+        revert("call failed");
     }
 }

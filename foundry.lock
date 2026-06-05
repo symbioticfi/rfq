@@ -1,4 +1,10 @@
 {
+  "lib/core-mirror": {
+    "branch": {
+      "name": "ir-adapter",
+      "rev": "24e635b91645c4c144e982ad21f2346e0ec0736c"
+    }
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.15.0",
