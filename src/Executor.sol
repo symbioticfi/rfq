@@ -7,16 +7,16 @@ import {IInstantRedemptionAdapter} from "./interfaces/IInstantRedemptionAdapter.
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
-import {LibCall as Address} from "@solady/src/utils/LibCall.sol";
-import {SafeTransferLib as SafeERC20} from "@solady/src/utils/SafeTransferLib.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title Executor
 /// @notice Role-gated executor that forwards fills into Reactor and handles execution callbacks.
 contract Executor is AccessControl, IExecutor {
+    using Address for address payable;
+    using SafeERC20 for IERC20;
     using Address for address;
-    using SafeERC20 for address;
 
     /* IMMUTABLES */
 
@@ -102,17 +102,20 @@ contract Executor is AccessControl, IExecutor {
 
         Call[] memory calls = abi.decode(executorData, (Call[]));
         for (uint256 i; i < calls.length; ++i) {
-            calls[i].target.callContract(calls[i].value, calls[i].data);
+            calls[i].target.functionCallWithValue(calls[i].data, calls[i].value);
         }
 
         for (uint256 i; i < order.request.outputs.length; ++i) {
             address token = order.request.outputs[i].token;
             if (token != NATIVE && IERC20(token).allowance(address(this), REACTOR) < type(uint256).max) {
-                token.safeApproveWithRetry(REACTOR, type(uint256).max);
+                IERC20(token).forceApprove(REACTOR, type(uint256).max);
             }
         }
 
-        REACTOR.trySafeTransferAllETH(gasleft());
+        uint256 balance = address(this).balance;
+        if (balance != 0) {
+            payable(REACTOR).sendValue(balance);
+        }
     }
 
     /* RECEIVE FUNCTION */

@@ -33,14 +33,14 @@ interface IReactor {
     /* ERRORS */
 
     /**
-     * @notice Raised when the sum of swap input amounts does not match the request input amount.
-     */
-    error InvalidAmountIn();
-
-    /**
      * @notice Raised when a swap adapter is not a LiquidLane adapter factory entity.
      */
     error InvalidAdapter();
+
+    /**
+     * @notice Raised when the sum of swap input amounts does not match the request input amount.
+     */
+    error InvalidAmountIn();
 
     /**
      * @notice Raised when the caller is not the authorized filler.

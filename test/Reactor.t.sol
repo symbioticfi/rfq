@@ -16,9 +16,8 @@ import {
     REQUEST_WITNESS_TYPE_STRING
 } from "../src/interfaces/IReactor.sol";
 
+import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-
-import {SafeTransferLib as SafeERC20} from "@solady/src/utils/SafeTransferLib.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -157,7 +156,9 @@ contract ReactorTest is Test {
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
 
-        vm.expectRevert(SafeERC20.TransferFromFailed.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 4 ether, 5 ether)
+        );
         vm.prank(filler);
         executor.fill(order, protocolSignature, swap, abi.encode(calls));
 
