@@ -39,6 +39,8 @@ contract ReactorTest is Test {
     address internal vault1Account = makeAddr("vault1Account");
 
     MockAdapter internal adapter;
+    MockAdapter internal secondaryAdapter;
+    MockAdapterFactory internal adapterFactory;
     MockCallTarget internal callTarget;
     MockERC20 internal outputToken;
     MockERC20 internal rwa;
@@ -48,10 +50,14 @@ contract ReactorTest is Test {
 
     function setUp() public {
         adapter = new MockAdapter();
+        secondaryAdapter = new MockAdapter();
+        adapterFactory = new MockAdapterFactory();
+        adapterFactory.setEntity(address(adapter), true);
+        adapterFactory.setEntity(address(secondaryAdapter), true);
         callTarget = new MockCallTarget();
         permit2 = new MockPermit2();
-        reactor = new Reactor(address(adapter), address(permit2));
-        executor = new Executor(address(reactor), address(adapter), address(this));
+        reactor = new Reactor(address(adapterFactory), address(permit2));
+        executor = new Executor(address(reactor), address(this));
         executor.grantRole(CALLER_ROLE, filler);
 
         rwa = new MockERC20("RWA", "RWA");
@@ -59,6 +65,8 @@ contract ReactorTest is Test {
 
         adapter.setAccount(vault0, address(rwa), vault0Account);
         adapter.setAccount(vault1, address(rwa), vault1Account);
+        secondaryAdapter.setAccount(vault0, address(rwa), vault0Account);
+        secondaryAdapter.setAccount(vault1, address(rwa), vault1Account);
 
         rwa.mint(swapper, 100 ether);
         vm.prank(swapper);
@@ -73,7 +81,7 @@ contract ReactorTest is Test {
         outputs[1] = IReactor.Output({token: address(outputToken), amount: 3 ether, recipient: referrer});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 10 ether, 10 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 10 ether, 10 ether);
 
         IReactor.Order memory order = _order(outputs, 10 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -97,9 +105,9 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 10 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap[] memory swapInputs = new IInstantRedemptionAdapter.Swap[](2);
-        swapInputs[0] = _swap(vault0, 4 ether, 4 ether);
-        swapInputs[1] = _swap(vault1, 6 ether, 6 ether);
+        IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](2);
+        swapInputs[0] = _swapInput(vault0, 4 ether, 4 ether);
+        swapInputs[1] = _swapInput(vault1, 6 ether, 6 ether);
 
         IReactor.Order memory order = _order(outputs, 10 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -113,6 +121,30 @@ contract ReactorTest is Test {
         assertEq(adapter.swapCount(), 2);
     }
 
+    function testFillRoutesSwapInputsToTheirAdapters() public {
+        outputToken.mint(address(executor), 10 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 10 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](2);
+        swapInputs[0] = _swapInput(address(adapter), vault0, 4 ether, 4 ether);
+        swapInputs[1] = _swapInput(address(secondaryAdapter), vault1, 6 ether, 6 ether);
+
+        IReactor.Order memory order = _order(outputs, 10 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swapInputs, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 4 ether);
+        assertEq(rwa.balanceOf(vault1Account), 6 ether);
+        assertEq(outputToken.balanceOf(swapper), 10 ether);
+        assertEq(adapter.swapCount(), 1);
+        assertEq(secondaryAdapter.swapCount(), 1);
+    }
+
     function testFillRevertsIfOutputsAreNotSatisfied() public {
         outputToken.mint(address(executor), 4 ether);
 
@@ -120,7 +152,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -134,8 +166,8 @@ contract ReactorTest is Test {
     }
 
     function testExecutorRequiresCallerRole() public {
-        Reactor customReactor = new Reactor(address(adapter), address(permit2));
-        Executor lockedExecutor = new Executor(address(customReactor), address(adapter), address(this));
+        Reactor customReactor = new Reactor(address(adapterFactory), address(permit2));
+        Executor lockedExecutor = new Executor(address(customReactor), address(this));
 
         outputToken.mint(address(lockedExecutor), 5 ether);
 
@@ -143,7 +175,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether, address(lockedExecutor));
         bytes memory protocolSignature = _signOrder(order, customReactor);
@@ -164,13 +196,13 @@ contract ReactorTest is Test {
     }
 
     function testFillRevertsIfExecutorDoesNotMatchOrderFiller() public {
-        Executor otherExecutor = new Executor(address(reactor), address(adapter), address(this));
+        Executor otherExecutor = new Executor(address(reactor), address(this));
 
         IReactor.Output[] memory outputs = new IReactor.Output[](1);
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
         IReactor.Order memory order = _order(outputs, 5 ether, address(otherExecutor));
         bytes memory protocolSignature = _signOrder(order);
 
@@ -186,7 +218,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: NATIVE, amount: 2 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -209,7 +241,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(approvalToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -235,7 +267,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory oldProtocolSignature = _signOrder(order);
@@ -255,9 +287,9 @@ contract ReactorTest is Test {
     function testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() public {
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap[] memory swapInputs = new IInstantRedemptionAdapter.Swap[](2);
-        swapInputs[0] = _swap(vault0, 4 ether, 4 ether);
-        swapInputs[1] = _swap(vault1, 5 ether, 5 ether);
+        IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](2);
+        swapInputs[0] = _swapInput(vault0, 4 ether, 4 ether);
+        swapInputs[1] = _swapInput(vault1, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 10 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -285,8 +317,11 @@ contract ReactorTest is Test {
 
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = IInstantRedemptionAdapter.Swap({
-            recipient: filler, vault: vault0, tokenIn: address(otherRwa), amountIn: 5 ether, amountOut: 5 ether
+        IReactor.SwapInput memory swap = IReactor.SwapInput({
+            adapter: address(adapter),
+            swap: IInstantRedemptionAdapter.Swap({
+                recipient: filler, vault: vault0, tokenIn: address(otherRwa), amountIn: 5 ether, amountOut: 5 ether
+            })
         });
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -296,6 +331,24 @@ contract ReactorTest is Test {
         executor.fill(order, protocolSignature, swap, abi.encode(calls));
     }
 
+    function testFillRevertsIfSwapAdapterIsNotFactoryEntity() public {
+        MockAdapter unregisteredAdapter = new MockAdapter();
+        unregisteredAdapter.setAccount(vault0, address(rwa), vault0Account);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](0);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(address(unregisteredAdapter), vault0, 5 ether, 5 ether);
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(IReactor.InvalidAdapter.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(address(unregisteredAdapter)), 0);
+        assertEq(rwa.balanceOf(vault0Account), 0);
+    }
+
     function testFillExecutesDiscountSwapInputsAlongsideDirectSwapInputs() public {
         outputToken.mint(address(executor), 10 ether);
 
@@ -303,8 +356,8 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 10 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap[] memory swapInputs = new IInstantRedemptionAdapter.Swap[](1);
-        swapInputs[0] = _swap(vault0, 4 ether, 4 ether);
+        IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](1);
+        swapInputs[0] = _swapInput(vault0, 4 ether, 4 ether);
 
         IReactor.DiscountSwapInput[] memory discountSwapInputs = new IReactor.DiscountSwapInput[](1);
         discountSwapInputs[0] = _discountSwapInput(vault1, 6 ether, 6 ether);
@@ -322,11 +375,59 @@ contract ReactorTest is Test {
         assertEq(adapter.discountSwapCount(), 1);
     }
 
+    function testFillRoutesDiscountSwapInputsToTheirAdapters() public {
+        outputToken.mint(address(executor), 10 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 10 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](0);
+        IReactor.DiscountSwapInput[] memory discountSwapInputs = new IReactor.DiscountSwapInput[](2);
+        discountSwapInputs[0] = _discountSwapInput(address(adapter), vault0, 4 ether, 4 ether);
+        discountSwapInputs[1] = _discountSwapInput(address(secondaryAdapter), vault1, 6 ether, 6 ether);
+
+        IReactor.Order memory order = _order(outputs, 10 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 4 ether);
+        assertEq(rwa.balanceOf(vault1Account), 6 ether);
+        assertEq(outputToken.balanceOf(swapper), 10 ether);
+        assertEq(adapter.discountSwapCount(), 1);
+        assertEq(secondaryAdapter.discountSwapCount(), 1);
+    }
+
+    function testFillRevertsIfDiscountSwapAdapterIsNotFactoryEntity() public {
+        MockAdapter unregisteredAdapter = new MockAdapter();
+        unregisteredAdapter.setAccount(vault0, address(rwa), vault0Account);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](0);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](0);
+        IReactor.DiscountSwapInput[] memory discountSwapInputs = new IReactor.DiscountSwapInput[](1);
+        discountSwapInputs[0] = _discountSwapInput(address(unregisteredAdapter), vault0, 5 ether, 5 ether);
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(IReactor.InvalidAdapter.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(address(unregisteredAdapter)), 0);
+        assertEq(rwa.balanceOf(vault0Account), 0);
+    }
+
     function testFillRevertsIfSwapAmountInDoesNotMatchOrderAmountIn() public {
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = IInstantRedemptionAdapter.Swap({
-            recipient: filler, vault: vault0, tokenIn: address(rwa), amountIn: 4 ether, amountOut: 5 ether
+        IReactor.SwapInput memory swap = IReactor.SwapInput({
+            adapter: address(adapter),
+            swap: IInstantRedemptionAdapter.Swap({
+                recipient: filler, vault: vault0, tokenIn: address(rwa), amountIn: 4 ether, amountOut: 5 ether
+            })
         });
 
         IReactor.Order memory order = _order(outputs, 5 ether);
@@ -340,8 +441,8 @@ contract ReactorTest is Test {
     function testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() public {
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap[] memory swapInputs = new IInstantRedemptionAdapter.Swap[](1);
-        swapInputs[0] = _swap(vault0, 4 ether, 4 ether);
+        IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](1);
+        swapInputs[0] = _swapInput(vault0, 4 ether, 4 ether);
 
         IReactor.DiscountSwapInput[] memory discountSwapInputs = new IReactor.DiscountSwapInput[](1);
         discountSwapInputs[0] = _discountSwapInput(vault1, 5 ether, 5 ether);
@@ -360,10 +461,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IExecutor.NotReactor.selector);
         executor.execute(
-            order,
-            new IInstantRedemptionAdapter.Swap[](0),
-            new IReactor.DiscountSwapInput[](0),
-            abi.encode(new IExecutor.Call[](0))
+            order, new IReactor.SwapInput[](0), new IReactor.DiscountSwapInput[](0), abi.encode(new IExecutor.Call[](0))
         );
     }
 
@@ -376,7 +474,7 @@ contract ReactorTest is Test {
         vm.prank(address(reactor));
         executor.execute(
             _order(new IReactor.Output[](0), 0),
-            new IInstantRedemptionAdapter.Swap[](0),
+            new IReactor.SwapInput[](0),
             new IReactor.DiscountSwapInput[](0),
             abi.encode(calls)
         );
@@ -486,12 +584,37 @@ contract ReactorTest is Test {
         });
     }
 
+    function _swapInput(address vault, uint256 amountIn, uint256 amountOut)
+        internal
+        view
+        returns (IReactor.SwapInput memory)
+    {
+        return _swapInput(address(adapter), vault, amountIn, amountOut);
+    }
+
+    function _swapInput(address adapter_, address vault, uint256 amountIn, uint256 amountOut)
+        internal
+        view
+        returns (IReactor.SwapInput memory)
+    {
+        return IReactor.SwapInput({adapter: adapter_, swap: _swap(vault, amountIn, amountOut)});
+    }
+
     function _discountSwapInput(address vault, uint256 amountIn, uint256 amountOut)
         internal
         view
         returns (IReactor.DiscountSwapInput memory)
     {
+        return _discountSwapInput(address(adapter), vault, amountIn, amountOut);
+    }
+
+    function _discountSwapInput(address adapter_, address vault, uint256 amountIn, uint256 amountOut)
+        internal
+        view
+        returns (IReactor.DiscountSwapInput memory)
+    {
         return IReactor.DiscountSwapInput({
+            adapter: adapter_,
             discountSwap: IInstantRedemptionAdapter.DiscountSwap({
                 discount: IInstantRedemptionAdapter.Discount({
                     vault: vault,
@@ -510,6 +633,14 @@ contract ReactorTest is Test {
             amountIn: amountIn,
             amountOut: amountOut
         });
+    }
+}
+
+contract MockAdapterFactory {
+    mapping(address adapter => bool status) public isEntity;
+
+    function setEntity(address adapter, bool status) external {
+        isEntity[adapter] = status;
     }
 }
 

@@ -22,14 +22,11 @@ contract Executor is AccessControl, IExecutor {
 
     /// @dev Reactor that is allowed to trigger execution callbacks.
     address internal immutable REACTOR;
-    /// @dev Instant redemption adapter used for swap execution.
-    address internal immutable IR_ADAPTER;
 
     /* CONSTRUCTOR */
 
-    constructor(address reactor, address irAdapter, address admin) {
+    constructor(address reactor, address admin) {
         REACTOR = reactor;
-        IR_ADAPTER = irAdapter;
 
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
@@ -51,17 +48,17 @@ contract Executor is AccessControl, IExecutor {
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap calldata swap,
+        IReactor.SwapInput calldata swapInput,
         bytes calldata executorData
     ) public onlyCaller {
-        IReactor(REACTOR).fill(order, protocolSignature, swap, executorData);
+        IReactor(REACTOR).fill(order, protocolSignature, swapInput, executorData);
     }
 
     /// @inheritdoc IExecutor
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap[] calldata swapInputs,
+        IReactor.SwapInput[] calldata swapInputs,
         bytes calldata executorData
     ) public onlyCaller {
         IReactor(REACTOR).fill(order, protocolSignature, swapInputs, executorData);
@@ -71,7 +68,7 @@ contract Executor is AccessControl, IExecutor {
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap[] calldata swapInputs,
+        IReactor.SwapInput[] calldata swapInputs,
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
     ) public onlyCaller {
@@ -81,7 +78,7 @@ contract Executor is AccessControl, IExecutor {
     /// @inheritdoc IExecutor
     function execute(
         IReactor.Order calldata order,
-        IInstantRedemptionAdapter.Swap[] calldata swapInputs,
+        IReactor.SwapInput[] calldata swapInputs,
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
     ) public {
@@ -90,10 +87,10 @@ contract Executor is AccessControl, IExecutor {
         }
 
         for (uint256 i; i < swapInputs.length; ++i) {
-            IInstantRedemptionAdapter(IR_ADAPTER).swap(swapInputs[i]);
+            IInstantRedemptionAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
-            IInstantRedemptionAdapter(IR_ADAPTER)
+            IInstantRedemptionAdapter(discountSwapInputs[i].adapter)
                 .swap(
                     discountSwapInputs[i].discountSwap,
                     discountSwapInputs[i].protocolSignature,
