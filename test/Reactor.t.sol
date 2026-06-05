@@ -240,7 +240,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: NATIVE, amount: 2 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -261,7 +261,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -311,7 +311,7 @@ contract ReactorTest is Test {
         outputs[1] = IReactor.Output({token: address(secondToken), amount: 7 ether, recipient: referrer});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 12 ether, 12 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 12 ether, 12 ether);
 
         IReactor.Order memory order = _order(outputs, 12 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -358,7 +358,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -550,7 +550,7 @@ contract ReactorTest is Test {
 
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, swapAmount, swapAmount);
+        IReactor.SwapInput memory swap = _swapInput(vault0, swapAmount, swapAmount);
 
         IReactor.Order memory order = _order(outputs, orderAmount);
         bytes memory protocolSignature = _signOrder(order);
@@ -565,7 +565,7 @@ contract ReactorTest is Test {
 
         IReactor.Output[] memory outputs = new IReactor.Output[](1);
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -589,7 +589,7 @@ contract ReactorTest is Test {
         calls[0] = IExecutor.Call({
             target: address(callTarget), value: 0, data: abi.encodeWithSelector(MockCallTarget.revertAlways.selector)
         });
-        IInstantRedemptionAdapter.Swap memory swap = _swap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -611,7 +611,7 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IInstantRedemptionAdapter.Swap memory swap = _swap(makeAddr("missingVault"), 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(makeAddr("missingVault"), 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
