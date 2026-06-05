@@ -40,15 +40,19 @@ contract ReactorMainnetForkTest is Test {
     address internal vaultAccount = makeAddr("vaultAccount");
 
     ForkMockAdapter internal adapter;
+    ForkAdapterFactory internal adapterFactory;
     Executor internal executor;
     Reactor internal reactor;
 
     function setUp() public {
         vm.createSelectFork(vm.envString("ETH_RPC_URL"));
+        vm.etch(swapper, "");
 
         adapter = new ForkMockAdapter();
-        reactor = new Reactor(address(adapter), PERMIT2);
-        executor = new Executor(address(reactor), address(adapter), address(this));
+        adapterFactory = new ForkAdapterFactory();
+        adapterFactory.setEntity(address(adapter), true);
+        reactor = new Reactor(address(adapterFactory), PERMIT2);
+        executor = new Executor(address(reactor), address(this));
         executor.grantRole(CALLER_ROLE, filler);
 
         adapter.setAccount(vault, DAI, vaultAccount);
@@ -138,9 +142,12 @@ contract ReactorMainnetForkTest is Test {
         order.swapperSignature = _signPermit2Witness(order);
     }
 
-    function _swap(uint256 amountIn) internal view returns (IInstantRedemptionAdapter.Swap memory) {
-        return IInstantRedemptionAdapter.Swap({
-            recipient: filler, vault: vault, tokenIn: DAI, amountIn: amountIn, amountOut: USDC_AMOUNT
+    function _swap(uint256 amountIn) internal view returns (IReactor.SwapInput memory) {
+        return IReactor.SwapInput({
+            adapter: address(adapter),
+            swap: IInstantRedemptionAdapter.Swap({
+                recipient: filler, vault: vault, tokenIn: DAI, amountIn: amountIn, amountOut: USDC_AMOUNT
+            })
         });
     }
 
@@ -222,6 +229,14 @@ contract ReactorMainnetForkTest is Test {
                 request.protocol
             )
         );
+    }
+}
+
+contract ForkAdapterFactory {
+    mapping(address adapter => bool status) public isEntity;
+
+    function setEntity(address adapter, bool status) public {
+        isEntity[adapter] = status;
     }
 }
 

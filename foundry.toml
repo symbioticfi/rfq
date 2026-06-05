@@ -13,6 +13,12 @@ gas_limit = "18446744073709551615"
 dynamic_test_linking = true
 ignored_warnings_from = ["test/","script/"]
 ffi = true
+additional_compiler_profiles = [
+  { name = "test", via_ir = false, optimizer = false }
+]
+compilation_restrictions = [
+  { paths = "test/**", via_ir = false }
+]
 
 [rpc_endpoints]
 mainnet = "${ETH_RPC_URL}"
@@ -39,14 +45,6 @@ wrap_comments = false
 lint_on_build = false
 exclude_lints = ["asm-keccak256","mixed-case-function","mixed-case-variable","pascal-case-struct","screaming-snake-case-const"]
 ignore = ["test/**/*.sol","script/**/*.sol","src/interfaces/**/*.sol"]
-
-additional_compiler_profiles = [
-  { name = "test", via_ir = false, optimizer = false }
-]
-
-compilation_restrictions = [
-  { paths = "test/**", via_ir = false, optimizer = false }
-]
 
 [profile.default.fuzz]
 runs = 1000

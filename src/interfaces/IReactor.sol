@@ -33,6 +33,11 @@ interface IReactor {
     /* ERRORS */
 
     /**
+     * @notice Raised when a swap adapter is not a LiquidLane adapter factory entity.
+     */
+    error InvalidAdapter();
+
+    /**
      * @notice Raised when the sum of swap input amounts does not match the request input amount.
      */
     error InvalidAmountIn();
@@ -104,7 +109,18 @@ interface IReactor {
     }
 
     /**
+     * @notice Direct adapter swap input.
+     * @param adapter LiquidLane adapter that executes the swap.
+     * @param swap Direct-caller adapter swap payload.
+     */
+    struct SwapInput {
+        address adapter;
+        IInstantRedemptionAdapter.Swap swap;
+    }
+
+    /**
      * @notice Discount-backed adapter swap input.
+     * @param adapter LiquidLane adapter that executes the swap.
      * @param discountSwap Protocol-authorized reusable discount payload.
      * @param protocolSignature Protocol signature over `discountSwap`.
      * @param recipient Recipient of the collateral output.
@@ -112,6 +128,7 @@ interface IReactor {
      * @param amountOut Collateral amount requested from the adapter.
      */
     struct DiscountSwapInput {
+        address adapter;
         IInstantRedemptionAdapter.DiscountSwap discountSwap;
         bytes protocolSignature;
         address recipient;
@@ -133,13 +150,13 @@ interface IReactor {
      * @notice Fills an order using the caller contract as the filler.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swap Direct-caller adapter swap.
+     * @param swapInput Direct-caller adapter swap input.
      * @param executorData Encoded executor payload.
      */
     function fill(
         Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap calldata swap,
+        SwapInput calldata swapInput,
         bytes calldata executorData
     ) external;
 
@@ -147,13 +164,13 @@ interface IReactor {
      * @notice Fills an order using multiple adapter legs with the caller contract as the filler.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swaps.
+     * @param swapInputs Direct-caller adapter swap inputs.
      * @param executorData Encoded executor payload.
      */
     function fill(
         Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap[] calldata swapInputs,
+        SwapInput[] calldata swapInputs,
         bytes calldata executorData
     ) external;
 
@@ -161,14 +178,14 @@ interface IReactor {
      * @notice Fills an order using both direct and discount-backed adapter legs with the caller contract as the filler.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swaps.
+     * @param swapInputs Direct-caller adapter swap inputs.
      * @param discountSwapInputs Discount-backed adapter swap inputs.
      * @param executorData Encoded executor payload.
      */
     function fill(
         Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap[] calldata swapInputs,
+        SwapInput[] calldata swapInputs,
         DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
     ) external;

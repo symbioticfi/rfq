@@ -37,6 +37,7 @@ contract CoreMirrorIntegrationTest is Test {
     address internal vault1Account = makeAddr("vault1Account");
 
     CoreMirrorAdapterMock internal adapter;
+    IntegrationAdapterFactory internal adapterFactory;
     IntegrationERC20 internal outputToken;
     IntegrationERC20 internal rwa;
     IntegrationPermit2 internal permit2;
@@ -45,9 +46,11 @@ contract CoreMirrorIntegrationTest is Test {
 
     function setUp() public {
         adapter = new CoreMirrorAdapterMock();
+        adapterFactory = new IntegrationAdapterFactory();
+        adapterFactory.setEntity(address(adapter), true);
         permit2 = new IntegrationPermit2();
-        reactor = new Reactor(address(adapter), address(permit2));
-        executor = new Executor(address(reactor), address(adapter), address(this));
+        reactor = new Reactor(address(adapterFactory), address(permit2));
+        executor = new Executor(address(reactor), address(this));
         executor.grantRole(CALLER_ROLE, filler);
 
         rwa = new IntegrationERC20("RWA", "RWA");
@@ -150,7 +153,7 @@ contract CoreMirrorIntegrationTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        LocalInstantRedemptionAdapter.Swap memory swap = _localSwap(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
         IReactor.Order memory order = _order(outputs, 5 ether);
 
         vm.prank(filler);
@@ -171,8 +174,8 @@ contract CoreMirrorIntegrationTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 10 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        LocalInstantRedemptionAdapter.Swap[] memory swapInputs = new LocalInstantRedemptionAdapter.Swap[](1);
-        swapInputs[0] = _localSwap(vault0, 4 ether, 4 ether);
+        IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](1);
+        swapInputs[0] = _swapInput(vault0, 4 ether, 4 ether);
 
         IReactor.DiscountSwapInput[] memory discountSwapInputs = new IReactor.DiscountSwapInput[](1);
         discountSwapInputs[0] = _discountSwapInput(vault1, 6 ether, 6 ether);
@@ -291,6 +294,14 @@ contract CoreMirrorIntegrationTest is Test {
         });
     }
 
+    function _swapInput(address vault, uint256 amountIn, uint256 amountOut)
+        internal
+        view
+        returns (IReactor.SwapInput memory)
+    {
+        return IReactor.SwapInput({adapter: address(adapter), swap: _localSwap(vault, amountIn, amountOut)});
+    }
+
     function _localDiscount(address vault) internal view returns (LocalInstantRedemptionAdapter.Discount memory) {
         return LocalInstantRedemptionAdapter.Discount({
             vault: vault,
@@ -309,6 +320,7 @@ contract CoreMirrorIntegrationTest is Test {
         returns (IReactor.DiscountSwapInput memory)
     {
         return IReactor.DiscountSwapInput({
+            adapter: address(adapter),
             discountSwap: LocalInstantRedemptionAdapter.DiscountSwap({
                 discount: _localDiscount(vault),
                 signerSignature: hex"1234",
@@ -319,6 +331,14 @@ contract CoreMirrorIntegrationTest is Test {
             amountIn: amountIn,
             amountOut: amountOut
         });
+    }
+}
+
+contract IntegrationAdapterFactory {
+    mapping(address adapter => bool status) public isEntity;
+
+    function setEntity(address adapter, bool status) public {
+        isEntity[adapter] = status;
     }
 }
 

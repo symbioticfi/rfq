@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity ^0.8.0;
 
-import {IInstantRedemptionAdapter} from "./IInstantRedemptionAdapter.sol";
 import {IReactor} from "./IReactor.sol";
 
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -47,13 +46,13 @@ interface IExecutor is IAccessControl {
      * @notice Role-gated caller-facing entrypoint that forwards a fill into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swap Direct-caller adapter swap.
+     * @param swapInput Direct-caller adapter swap input.
      * @param executorData Encoded executor payload.
      */
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap calldata swap,
+        IReactor.SwapInput calldata swapInput,
         bytes calldata executorData
     ) external;
 
@@ -61,13 +60,13 @@ interface IExecutor is IAccessControl {
      * @notice Role-gated caller-facing entrypoint that forwards a multi-leg fill into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swaps.
+     * @param swapInputs Direct-caller adapter swap inputs.
      * @param executorData Encoded executor payload.
      */
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap[] calldata swapInputs,
+        IReactor.SwapInput[] calldata swapInputs,
         bytes calldata executorData
     ) external;
 
@@ -75,14 +74,14 @@ interface IExecutor is IAccessControl {
      * @notice Role-gated caller-facing entrypoint that forwards direct and discount-backed legs into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swaps.
+     * @param swapInputs Direct-caller adapter swap inputs.
      * @param discountSwapInputs Discount-backed adapter swap inputs.
      * @param executorData Encoded executor payload.
      */
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
-        IInstantRedemptionAdapter.Swap[] calldata swapInputs,
+        IReactor.SwapInput[] calldata swapInputs,
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
     ) external;
@@ -90,13 +89,13 @@ interface IExecutor is IAccessControl {
     /**
      * @notice Executes routed calls for an authorized caller.
      * @param order Protocol-authorized order.
-     * @param swapInputs Direct adapter swaps selected for the fill.
+     * @param swapInputs Direct adapter swap inputs selected for the fill.
      * @param discountSwapInputs Discount-backed adapter swap legs selected for the fill.
      * @param executorData Encoded executor payload.
      */
     function execute(
         IReactor.Order calldata order,
-        IInstantRedemptionAdapter.Swap[] calldata swapInputs,
+        IReactor.SwapInput[] calldata swapInputs,
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
     ) external;

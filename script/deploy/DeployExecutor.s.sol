@@ -9,11 +9,10 @@ import {Executor} from "../../src/Executor.sol";
 contract DeployExecutorScript is Script {
     function run() public returns (Executor executor) {
         address reactor = vm.envAddress("REACTOR");
-        address irAdapter = vm.envAddress("IR_ADAPTER");
         address admin = vm.envAddress("ADMIN");
 
         vm.startBroadcast();
-        executor = new Executor(reactor, irAdapter, admin);
+        executor = new Executor(reactor, admin);
         vm.stopBroadcast();
 
         console2.log("Deployed Executor:", address(executor));

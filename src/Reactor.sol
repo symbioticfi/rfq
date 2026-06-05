@@ -3,7 +3,6 @@
 pragma solidity 0.8.28;
 
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {IInstantRedemptionAdapter} from "./interfaces/IInstantRedemptionAdapter.sol";
 import {IPermit2} from "./interfaces/IPermit2.sol";
 import {
     IReactor,
@@ -13,27 +12,31 @@ import {
     REQUEST_TYPEHASH,
     REQUEST_WITNESS_TYPE_STRING
 } from "./interfaces/IReactor.sol";
+import {IRegistry} from "./interfaces/IRegistry.sol";
 
-import {EIP712} from "@solady/src/utils/EIP712.sol";
-import {SafeTransferLib as SafeERC20} from "@solady/src/utils/SafeTransferLib.sol";
-import {SignatureCheckerLib as SignatureChecker} from "@solady/src/utils/SignatureCheckerLib.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 /// @title Reactor
 /// @notice Contract for Permit2-based RWA intake, redemption-account routing, and executor invocation.
 contract Reactor is EIP712, IReactor {
-    using SafeERC20 for address;
+    using Address for address payable;
+    using SafeERC20 for IERC20;
 
     /* IMMUTABLES */
 
-    /// @dev Instant redemption adapter that executes vault swap legs.
-    address internal immutable ADAPTER;
+    /// @dev Factory registry that validates LiquidLane adapter entities.
+    address public immutable LIQUID_LANE_ADAPTER_FACTORY;
     /// @dev Permit2 contract that transfers the swapper input into the Reactor.
     address internal immutable PERMIT2;
 
     /* CONSTRUCTOR */
 
-    constructor(address adapter, address permit2) {
-        ADAPTER = adapter;
+    constructor(address liquidLaneAdapterFactory, address permit2) EIP712("Reactor", "1") {
+        LIQUID_LANE_ADAPTER_FACTORY = liquidLaneAdapterFactory;
         PERMIT2 = permit2;
     }
 
@@ -43,11 +46,11 @@ contract Reactor is EIP712, IReactor {
     function fill(
         Order memory order,
         bytes memory protocolSignature,
-        IInstantRedemptionAdapter.Swap memory swap,
+        SwapInput memory swapInput,
         bytes memory executorData
     ) public {
-        IInstantRedemptionAdapter.Swap[] memory swapInputs = new IInstantRedemptionAdapter.Swap[](1);
-        swapInputs[0] = swap;
+        SwapInput[] memory swapInputs = new SwapInput[](1);
+        swapInputs[0] = swapInput;
 
         _fill(order, protocolSignature, swapInputs, new DiscountSwapInput[](0), executorData);
     }
@@ -56,7 +59,7 @@ contract Reactor is EIP712, IReactor {
     function fill(
         Order memory order,
         bytes memory protocolSignature,
-        IInstantRedemptionAdapter.Swap[] memory swapInputs,
+        SwapInput[] memory swapInputs,
         bytes memory executorData
     ) public {
         _fill(order, protocolSignature, swapInputs, new DiscountSwapInput[](0), executorData);
@@ -66,7 +69,7 @@ contract Reactor is EIP712, IReactor {
     function fill(
         Order memory order,
         bytes memory protocolSignature,
-        IInstantRedemptionAdapter.Swap[] memory swapInputs,
+        SwapInput[] memory swapInputs,
         DiscountSwapInput[] memory discountSwapInputs,
         bytes memory executorData
     ) public {
@@ -84,12 +87,12 @@ contract Reactor is EIP712, IReactor {
     function _fill(
         Order memory order,
         bytes memory protocolSignature,
-        IInstantRedemptionAdapter.Swap[] memory swapInputs,
+        SwapInput[] memory swapInputs,
         DiscountSwapInput[] memory discountSwapInputs,
         bytes memory executorData
     ) internal {
         if (!SignatureChecker.isValidSignatureNow(
-                order.request.protocol, _hashTypedData(_hashOrder(order)), protocolSignature
+                order.request.protocol, _hashTypedDataV4(_hashOrder(order)), protocolSignature
             )) {
             revert InvalidProtocolSignature();
         }
@@ -99,12 +102,19 @@ contract Reactor is EIP712, IReactor {
 
         uint256 totalAmountIn;
         for (uint256 i; i < swapInputs.length; ++i) {
-            if (swapInputs[i].tokenIn != order.request.tokenIn) {
+            if (!IRegistry(LIQUID_LANE_ADAPTER_FACTORY).isEntity(swapInputs[i].adapter)) {
+                revert InvalidAdapter();
+            }
+            if (swapInputs[i].swap.tokenIn != order.request.tokenIn) {
                 revert InvalidTokenIn();
             }
-            totalAmountIn += swapInputs[i].amountIn;
+
+            totalAmountIn += swapInputs[i].swap.amountIn;
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
+            if (!IRegistry(LIQUID_LANE_ADAPTER_FACTORY).isEntity(discountSwapInputs[i].adapter)) {
+                revert InvalidAdapter();
+            }
             if (discountSwapInputs[i].discountSwap.discount.tokenToRedeem != order.request.tokenIn) {
                 revert InvalidTokenIn();
             }
@@ -117,12 +127,10 @@ contract Reactor is EIP712, IReactor {
         IPermit2(PERMIT2)
             .permitWitnessTransferFrom(
                 IPermit2.PermitTransferFrom({
-                    permitted: IPermit2.TokenPermissions({
-                        token: order.request.tokenIn, amount: order.request.amountIn
-                    }),
-                    nonce: order.request.nonce,
-                    deadline: order.request.deadline
-                }),
+                permitted: IPermit2.TokenPermissions({token: order.request.tokenIn, amount: order.request.amountIn}),
+                nonce: order.request.nonce,
+                deadline: order.request.deadline
+            }),
                 IPermit2.SignatureTransferDetails({to: address(this), requestedAmount: order.request.amountIn}),
                 order.swapper,
                 _hashRequest(order.request),
@@ -131,19 +139,19 @@ contract Reactor is EIP712, IReactor {
             );
 
         for (uint256 i; i < swapInputs.length; ++i) {
-            order.request.tokenIn.safeTransfer(ADAPTER, swapInputs[i].amountIn);
+            IERC20(order.request.tokenIn).safeTransfer(swapInputs[i].adapter, swapInputs[i].swap.amountIn);
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
-            order.request.tokenIn.safeTransfer(ADAPTER, discountSwapInputs[i].amountIn);
+            IERC20(order.request.tokenIn).safeTransfer(discountSwapInputs[i].adapter, discountSwapInputs[i].amountIn);
         }
 
         IExecutor(msg.sender).execute(order, swapInputs, discountSwapInputs, executorData);
 
         for (uint256 i; i < order.request.outputs.length; ++i) {
             if (order.request.outputs[i].token == NATIVE) {
-                order.request.outputs[i].recipient.safeTransferETH(order.request.outputs[i].amount);
+                payable(order.request.outputs[i].recipient).sendValue(order.request.outputs[i].amount);
             } else {
-                order.request.outputs[i].token
+                IERC20(order.request.outputs[i].token)
                     .safeTransferFrom(msg.sender, order.request.outputs[i].recipient, order.request.outputs[i].amount);
             }
         }
@@ -185,14 +193,6 @@ contract Reactor is EIP712, IReactor {
                 request.protocol
             )
         );
-    }
-
-    /// @dev Returns the Reactor EIP-712 domain metadata.
-    /// @return name The EIP-712 domain name.
-    /// @return version The EIP-712 domain version.
-    function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
-        name = "Reactor";
-        version = "1";
     }
 
     /* RECEIVE FUNCTION */
