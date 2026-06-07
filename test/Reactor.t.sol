@@ -6,15 +6,7 @@ import {Executor} from "../src/Executor.sol";
 import {Reactor} from "../src/Reactor.sol";
 import {CALLER_ROLE, IExecutor} from "../src/interfaces/IExecutor.sol";
 import {IInstantRedemptionAdapter} from "../src/interfaces/IInstantRedemptionAdapter.sol";
-import {IPermit2} from "../src/interfaces/IPermit2.sol";
-import {
-    IReactor,
-    NATIVE,
-    ORDER_TYPEHASH,
-    OUTPUT_TYPEHASH,
-    REQUEST_TYPEHASH,
-    REQUEST_WITNESS_TYPE_STRING
-} from "../src/interfaces/IReactor.sol";
+import {IReactor, NATIVE, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -26,12 +18,13 @@ contract ReactorTest is Test {
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     uint256 internal constant NEW_PROTOCOL_PRIVATE_KEY = 0xB0B;
     uint256 internal constant PROTOCOL_PRIVATE_KEY = 0xA11CE;
+    uint256 internal constant SWAPPER_PRIVATE_KEY = 0xBEEF;
 
     address internal filler = makeAddr("filler");
     address internal newProtocol = vm.addr(NEW_PROTOCOL_PRIVATE_KEY);
     address internal protocol = vm.addr(PROTOCOL_PRIVATE_KEY);
     address internal referrer = makeAddr("referrer");
-    address internal swapper = makeAddr("swapper");
+    address internal swapper = vm.addr(SWAPPER_PRIVATE_KEY);
     address internal vault0 = makeAddr("vault0");
     address internal vault1 = makeAddr("vault1");
     address internal vault0Account = makeAddr("vault0Account");
@@ -43,7 +36,6 @@ contract ReactorTest is Test {
     MockCallTarget internal callTarget;
     MockERC20 internal outputToken;
     MockERC20 internal rwa;
-    MockPermit2 internal permit2;
     Executor internal executor;
     Reactor internal reactor;
 
@@ -54,8 +46,7 @@ contract ReactorTest is Test {
         adapterFactory.setEntity(address(adapter), true);
         adapterFactory.setEntity(address(secondaryAdapter), true);
         callTarget = new MockCallTarget();
-        permit2 = new MockPermit2();
-        reactor = new Reactor(address(adapterFactory), address(permit2));
+        reactor = new Reactor(address(adapterFactory));
         executor = new Executor(address(reactor), address(this));
         executor.grantRole(CALLER_ROLE, filler);
 
@@ -69,7 +60,7 @@ contract ReactorTest is Test {
 
         rwa.mint(swapper, 100 ether);
         vm.prank(swapper);
-        rwa.approve(address(permit2), type(uint256).max);
+        rwa.approve(address(reactor), type(uint256).max);
     }
 
     function testFillTransfersRwaIntoAccountsAndDeliversOutputs() public {
@@ -93,6 +84,7 @@ contract ReactorTest is Test {
         assertEq(outputToken.balanceOf(swapper), 7 ether);
         assertEq(outputToken.balanceOf(referrer), 3 ether);
         assertEq(rwa.balanceOf(address(reactor)), 0);
+        assertEq(rwa.balanceOf(address(adapter)), 0);
         assertEq(adapter.swapCount(), 1);
         assertEq(adapter.signedSwapCount(), 0);
     }
@@ -142,6 +134,8 @@ contract ReactorTest is Test {
         assertEq(outputToken.balanceOf(swapper), 10 ether);
         assertEq(adapter.swapCount(), 1);
         assertEq(secondaryAdapter.swapCount(), 1);
+        assertEq(rwa.balanceOf(address(adapter)), 0);
+        assertEq(rwa.balanceOf(address(secondaryAdapter)), 0);
     }
 
     function testFillRevertsIfOutputsAreNotSatisfied() public {
@@ -167,7 +161,7 @@ contract ReactorTest is Test {
     }
 
     function testExecutorRequiresCallerRole() public {
-        Reactor customReactor = new Reactor(address(adapterFactory), address(permit2));
+        Reactor customReactor = new Reactor(address(adapterFactory));
         Executor lockedExecutor = new Executor(address(customReactor), address(this));
 
         outputToken.mint(address(lockedExecutor), 5 ether);
@@ -178,7 +172,7 @@ contract ReactorTest is Test {
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
         IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
 
-        IReactor.Order memory order = _order(outputs, 5 ether, address(lockedExecutor));
+        IReactor.Order memory order = _order(outputs, 5 ether, address(lockedExecutor), customReactor);
         bytes memory protocolSignature = _signOrder(order, customReactor);
 
         vm.expectRevert(IExecutor.NotCaller.selector);
@@ -186,6 +180,8 @@ contract ReactorTest is Test {
         lockedExecutor.fill(order, protocolSignature, swap, abi.encode(calls));
 
         lockedExecutor.grantRole(CALLER_ROLE, filler);
+        vm.prank(swapper);
+        rwa.approve(address(customReactor), type(uint256).max);
 
         vm.prank(filler);
         lockedExecutor.fill(order, protocolSignature, swap, abi.encode(calls));
@@ -293,6 +289,10 @@ contract ReactorTest is Test {
         assertEq(approvalToken.allowance(address(executor), address(reactor)), type(uint256).max);
         assertEq(approvalToken.approveCalls(), 1);
 
+        order.request.nonce = 2;
+        order.swapperSignature = _signRequest(order.request);
+        protocolSignature = _signOrder(order);
+
         vm.prank(filler);
         executor.fill(order, protocolSignature, swap, abi.encode(calls));
 
@@ -346,6 +346,7 @@ contract ReactorTest is Test {
         vm.expectRevert(IReactor.InvalidProtocolSignature.selector);
         executor.fill(order, oldProtocolSignature, swap, abi.encode(calls));
 
+        order.swapperSignature = _signRequest(order.request);
         executor.fill(order, _signOrder(order, reactor, NEW_PROTOCOL_PRIVATE_KEY), swap, abi.encode(calls));
         vm.stopPrank();
 
@@ -371,6 +372,84 @@ contract ReactorTest is Test {
         executor.fill(order, protocolSignature, swap, abi.encode(calls));
     }
 
+    function testFillRejectsInvalidSwapperRequestSignature() public {
+        IReactor.Output[] memory outputs = new IReactor.Output[](0);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        order.swapperSignature = _signRequest(order.request, reactor, NEW_PROTOCOL_PRIVATE_KEY);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(IReactor.InvalidProtocolSignature.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+    }
+
+    function testFillRevertsIfSwapperHasNotApprovedReactor() public {
+        vm.prank(swapper);
+        rwa.approve(address(reactor), 0);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](0);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(reactor), 0, 5 ether)
+        );
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+        assertEq(adapter.swapCount(), 0);
+    }
+
+    function testFillRevertsIfRequestIsExpired() public {
+        IReactor.Output[] memory outputs = new IReactor.Output[](0);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        order.request.deadline = block.timestamp + 1;
+        order.swapperSignature = _signRequest(order.request);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.warp(order.request.deadline + 1);
+
+        vm.expectRevert(IReactor.ExpiredRequest.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+    }
+
+    function testFillRevertsIfRequestNonceAlreadyUsed() public {
+        outputToken.mint(address(executor), 10 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        vm.expectRevert(IReactor.NonceUsed.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(IReactor(address(reactor)).isUsedNonce(swapper, order.request.nonce), true);
+        assertEq(rwa.balanceOf(vault0Account), 5 ether);
+        assertEq(outputToken.balanceOf(swapper), 5 ether);
+    }
+
     function testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() public {
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
@@ -386,21 +465,12 @@ contract ReactorTest is Test {
         executor.fill(order, protocolSignature, swapInputs, abi.encode(calls));
     }
 
-    function testRequestWitnessTypeStringMatchesPermit2CanonicalOrder() public pure {
-        assertEq(
-            REQUEST_WITNESS_TYPE_STRING,
-            "Request witness)Output(address token,uint256 amount,address recipient)"
-            "Request(address tokenIn,uint256 amountIn,Output[] outputs,uint256 deadline,uint256 nonce,address protocol)"
-            "TokenPermissions(address token,uint256 amount)"
-        );
-    }
-
     function testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() public {
         MockERC20 otherRwa = new MockERC20("OtherRWA", "ORWA");
         adapter.setAccount(vault0, address(otherRwa), makeAddr("otherAccount"));
         otherRwa.mint(swapper, 5 ether);
         vm.prank(swapper);
-        otherRwa.approve(address(permit2), type(uint256).max);
+        otherRwa.approve(address(reactor), type(uint256).max);
 
         IReactor.Output[] memory outputs = new IReactor.Output[](0);
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
@@ -460,6 +530,7 @@ contract ReactorTest is Test {
         assertEq(outputToken.balanceOf(swapper), 10 ether);
         assertEq(adapter.swapCount(), 1);
         assertEq(adapter.discountSwapCount(), 1);
+        assertEq(rwa.balanceOf(address(adapter)), 0);
     }
 
     function testFillRoutesDiscountSwapInputsToTheirAdapters() public {
@@ -667,18 +738,24 @@ contract ReactorTest is Test {
         view
         returns (IReactor.Order memory)
     {
+        return _order(outputs, amountIn, filler_, reactor);
+    }
+
+    function _order(IReactor.Output[] memory outputs, uint256 amountIn, address filler_, Reactor reactor_)
+        internal
+        view
+        returns (IReactor.Order memory)
+    {
+        IReactor.Request memory request = IReactor.Request({
+            tokenIn: address(rwa),
+            amountIn: amountIn,
+            outputs: outputs,
+            deadline: block.timestamp + 1 days,
+            nonce: 1,
+            protocol: protocol
+        });
         return IReactor.Order({
-            request: IReactor.Request({
-                tokenIn: address(rwa),
-                amountIn: amountIn,
-                outputs: outputs,
-                deadline: block.timestamp + 1 days,
-                nonce: 1,
-                protocol: protocol
-            }),
-            swapperSignature: hex"1234",
-            swapper: swapper,
-            filler: filler_
+            request: request, swapperSignature: _signRequest(request, reactor_), swapper: swapper, filler: filler_
         });
     }
 
@@ -708,6 +785,38 @@ contract ReactorTest is Test {
                     )
                 ),
                 _hashOrder(order)
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function _signRequest(IReactor.Request memory request) internal view returns (bytes memory) {
+        return _signRequest(request, reactor, SWAPPER_PRIVATE_KEY);
+    }
+
+    function _signRequest(IReactor.Request memory request, Reactor reactor_) internal view returns (bytes memory) {
+        return _signRequest(request, reactor_, SWAPPER_PRIVATE_KEY);
+    }
+
+    function _signRequest(IReactor.Request memory request, Reactor reactor_, uint256 privateKey)
+        internal
+        view
+        returns (bytes memory)
+    {
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                hex"1901",
+                keccak256(
+                    abi.encode(
+                        DOMAIN_TYPEHASH,
+                        keccak256(bytes("Reactor")),
+                        keccak256(bytes("1")),
+                        block.chainid,
+                        address(reactor_)
+                    )
+                ),
+                _hashRequest(request)
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
@@ -879,20 +988,6 @@ contract MockApprovalERC20 is MockERC20 {
     function approve(address spender, uint256 amount) public override returns (bool) {
         ++approveCalls;
         return super.approve(spender, amount);
-    }
-}
-
-contract MockPermit2 is IPermit2 {
-    function permitWitnessTransferFrom(
-        PermitTransferFrom memory permit,
-        SignatureTransferDetails calldata transferDetails,
-        address owner,
-        bytes32,
-        string calldata,
-        bytes calldata
-    ) public {
-        require(permit.permitted.amount == transferDetails.requestedAmount, "invalid amount");
-        ERC20(permit.permitted.token).transferFrom(owner, transferDetails.to, transferDetails.requestedAmount);
     }
 }
 

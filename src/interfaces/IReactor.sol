@@ -20,10 +20,6 @@ bytes32 constant ORDER_TYPEHASH = keccak256(
     "Output(address token,uint256 amount,address recipient)"
     "Request(address tokenIn,uint256 amountIn,Output[] outputs,uint256 deadline,uint256 nonce,address protocol)"
 );
-/* Permit2 witness type string for Reactor requests. */
-string constant REQUEST_WITNESS_TYPE_STRING = "Request witness)Output(address token,uint256 amount,address recipient)"
-    "Request(address tokenIn,uint256 amountIn,Output[] outputs,uint256 deadline,uint256 nonce,address protocol)"
-    "TokenPermissions(address token,uint256 amount)";
 
 /**
  * @title IReactor
@@ -31,6 +27,11 @@ string constant REQUEST_WITNESS_TYPE_STRING = "Request witness)Output(address to
  */
 interface IReactor {
     /* ERRORS */
+
+    /**
+     * @notice Raised when the request deadline has passed.
+     */
+    error ExpiredRequest();
 
     /**
      * @notice Raised when a swap adapter is not a LiquidLane adapter factory entity.
@@ -62,6 +63,11 @@ interface IReactor {
      */
     error InvalidTokenIn();
 
+    /**
+     * @notice Raised when the swapper request nonce has already been used.
+     */
+    error NonceUsed();
+
     /* STRUCTS */
 
     /**
@@ -77,12 +83,12 @@ interface IReactor {
     }
 
     /**
-     * @notice Permit2 witness payload for an exact-input redemption request.
+     * @notice Exact-input redemption request.
      * @param tokenIn Input token address.
      * @param amountIn Exact input amount.
      * @param outputs Output obligations that must be satisfied.
-     * @param deadline Request deadline.
-     * @param nonce Permit2 nonce.
+     * @param deadline Request expiry timestamp.
+     * @param nonce Swapper nonce consumed by Reactor on fill.
      * @param protocol Protocol signer bound to the request.
      */
     struct Request {
@@ -97,8 +103,8 @@ interface IReactor {
     /**
      * @notice Protocol-authorized order for a winning filler.
      * @param request Swapper request that is bound to the fill.
-     * @param swapperSignature Permit2 swapper signature.
-     * @param swapper Address that owns the input token and signed the Permit2 witness.
+     * @param swapperSignature Swapper signature over `request`.
+     * @param swapper Swapper address that owns the input token and approved Reactor.
      * @param filler Winning filler address allowed to call the Reactor.
      */
     struct Order {
@@ -145,6 +151,14 @@ interface IReactor {
     event Fill(Order order);
 
     /* FUNCTIONS */
+
+    /**
+     * @notice Returns whether a swapper request nonce has been consumed.
+     * @param swapper Address that owns the nonce.
+     * @param nonce Request nonce to check.
+     * @return used Whether the nonce has already been consumed.
+     */
+    function isUsedNonce(address swapper, uint256 nonce) external view returns (bool used);
 
     /**
      * @notice Fills an order using the caller contract as the filler.

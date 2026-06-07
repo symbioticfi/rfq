@@ -3,44 +3,48 @@
 pragma solidity 0.8.28;
 
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {IPermit2} from "./interfaces/IPermit2.sol";
-import {
-    IReactor,
-    NATIVE,
-    ORDER_TYPEHASH,
-    OUTPUT_TYPEHASH,
-    REQUEST_TYPEHASH,
-    REQUEST_WITNESS_TYPE_STRING
-} from "./interfaces/IReactor.sol";
+import {IReactor, NATIVE, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "./interfaces/IReactor.sol";
 import {IRegistry} from "./interfaces/IRegistry.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {BitMaps} from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 /// @title Reactor
-/// @notice Contract for Permit2-based RWA intake, redemption-account routing, and executor invocation.
+/// @notice Contract for approved RWA intake, redemption-account routing, and executor invocation.
 contract Reactor is EIP712, IReactor {
     using Address for address payable;
+    using BitMaps for BitMaps.BitMap;
     using SafeERC20 for IERC20;
 
     /* IMMUTABLES */
 
     /// @dev Factory registry that validates LiquidLane adapter entities.
     address public immutable LIQUID_LANE_ADAPTER_FACTORY;
-    /// @dev Permit2 contract that transfers the swapper input into the Reactor.
-    address internal immutable PERMIT2;
+
+    /* STORAGE */
+
+    /// @dev Tracks consumed request nonces by swapper.
+    mapping(address swapper => BitMaps.BitMap nonces) internal _isUsedNonce;
 
     /* CONSTRUCTOR */
 
-    constructor(address liquidLaneAdapterFactory, address permit2) EIP712("Reactor", "1") {
+    constructor(address liquidLaneAdapterFactory) EIP712("Reactor", "1") {
         LIQUID_LANE_ADAPTER_FACTORY = liquidLaneAdapterFactory;
-        PERMIT2 = permit2;
     }
 
     /* PUBLIC FUNCTIONS */
+
+    /// @notice Returns whether a swapper request nonce has been consumed.
+    /// @param swapper Address that owns the nonce.
+    /// @param nonce Request nonce to check.
+    /// @return used Whether the nonce has already been consumed.
+    function isUsedNonce(address swapper, uint256 nonce) public view returns (bool used) {
+        return _isUsedNonce[swapper].get(nonce);
+    }
 
     /// @inheritdoc IReactor
     function fill(
@@ -96,8 +100,19 @@ contract Reactor is EIP712, IReactor {
             )) {
             revert InvalidProtocolSignature();
         }
+        if (!SignatureChecker.isValidSignatureNow(
+                order.swapper, _hashTypedDataV4(_hashRequest(order.request)), order.swapperSignature
+            )) {
+            revert InvalidProtocolSignature();
+        }
         if (order.filler != msg.sender) {
             revert InvalidFiller();
+        }
+        if (block.timestamp > order.request.deadline) {
+            revert ExpiredRequest();
+        }
+        if (isUsedNonce(order.swapper, order.request.nonce)) {
+            revert NonceUsed();
         }
 
         uint256 totalAmountIn;
@@ -124,25 +139,14 @@ contract Reactor is EIP712, IReactor {
             revert InvalidAmountIn();
         }
 
-        IPermit2(PERMIT2)
-            .permitWitnessTransferFrom(
-                IPermit2.PermitTransferFrom({
-                permitted: IPermit2.TokenPermissions({token: order.request.tokenIn, amount: order.request.amountIn}),
-                nonce: order.request.nonce,
-                deadline: order.request.deadline
-            }),
-                IPermit2.SignatureTransferDetails({to: address(this), requestedAmount: order.request.amountIn}),
-                order.swapper,
-                _hashRequest(order.request),
-                REQUEST_WITNESS_TYPE_STRING,
-                order.swapperSignature
-            );
-
+        _isUsedNonce[order.swapper].set(order.request.nonce);
         for (uint256 i; i < swapInputs.length; ++i) {
-            IERC20(order.request.tokenIn).safeTransfer(swapInputs[i].adapter, swapInputs[i].swap.amountIn);
+            IERC20(order.request.tokenIn)
+                .safeTransferFrom(order.swapper, swapInputs[i].adapter, swapInputs[i].swap.amountIn);
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
-            IERC20(order.request.tokenIn).safeTransfer(discountSwapInputs[i].adapter, discountSwapInputs[i].amountIn);
+            IERC20(order.request.tokenIn)
+                .safeTransferFrom(order.swapper, discountSwapInputs[i].adapter, discountSwapInputs[i].amountIn);
         }
 
         IExecutor(msg.sender).execute(order, swapInputs, discountSwapInputs, executorData);

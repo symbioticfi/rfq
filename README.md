@@ -4,7 +4,7 @@
 
 This directory contains the core RFQ settlement contracts used by the Symbiotic instant redemption flow. The pair is intentionally small:
 
-- `Reactor.sol` validates the signed order, pulls the input through Permit2, routes input into factory-registered LiquidLane adapters, and enforces output delivery.
+- `Reactor.sol` validates the signed order, pulls approved input from the swapper directly into factory-registered LiquidLane adapters, and enforces output delivery.
 - `Executor.sol` is an example role-gated execution surface that calls the Reactor, performs adapter swaps, runs any post-swap execution payload, and approves output transfers back to the Reactor.
 
 > [!NOTE]
@@ -18,10 +18,10 @@ This directory contains the core RFQ settlement contracts used by the Symbiotic 
 
 ## Flow
 
-1. The user signs a Permit2 witness order.
+1. The user signs the typed `Request` and approves `Reactor` to spend the input token.
 2. The authorized filler calls `Executor.fill(...)`.
 3. `Executor` forwards the request into `Reactor`.
-4. `Reactor` validates signatures, checks each adapter against `LIQUID_LANE_ADAPTER_FACTORY`, pulls the input token, and sends swap legs to their adapters.
+4. `Reactor` validates signatures, checks each adapter against `LIQUID_LANE_ADAPTER_FACTORY`, consumes the request nonce, and transfers input token legs from the swapper to their adapters.
 5. `Executor.execute(...)` performs the per-leg adapter swaps and any opaque execution payload.
 6. `Reactor` enforces the requested outputs and emits the fill event used by the indexer.
 
@@ -62,4 +62,4 @@ forge script script/deploy/DeployExecutor.s.sol:DeployExecutorScript \
 ## Notes
 
 - `Executor` is role-gated through `CALLER_ROLE`.
-- `Reactor` uses Permit2 witness transfers and factory-registered LiquidLane adapters as its execution primitives.
+- `Reactor` uses swapper ERC20 allowances, Reactor-managed request nonces, request deadlines, and factory-registered LiquidLane adapters as its execution primitives.

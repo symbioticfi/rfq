@@ -8,9 +8,9 @@ import {CALLER_ROLE, IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
     IInstantRedemptionAdapter as LocalInstantRedemptionAdapter
 } from "../src/interfaces/IInstantRedemptionAdapter.sol";
-import {IPermit2} from "../src/interfaces/IPermit2.sol";
 import {IReactor, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 import {
@@ -27,10 +27,11 @@ contract CoreMirrorIntegrationTest is Test {
     bytes32 internal constant DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     uint256 internal constant PROTOCOL_PRIVATE_KEY = 0xA11CE;
+    uint256 internal constant SWAPPER_PRIVATE_KEY = 0xBEEF;
 
     address internal filler = makeAddr("filler");
     address internal protocol = vm.addr(PROTOCOL_PRIVATE_KEY);
-    address internal swapper = makeAddr("swapper");
+    address internal swapper = vm.addr(SWAPPER_PRIVATE_KEY);
     address internal vault0 = makeAddr("vault0");
     address internal vault1 = makeAddr("vault1");
     address internal vault0Account = makeAddr("vault0Account");
@@ -40,7 +41,6 @@ contract CoreMirrorIntegrationTest is Test {
     IntegrationAdapterFactory internal adapterFactory;
     IntegrationERC20 internal outputToken;
     IntegrationERC20 internal rwa;
-    IntegrationPermit2 internal permit2;
     Executor internal executor;
     Reactor internal reactor;
 
@@ -48,8 +48,7 @@ contract CoreMirrorIntegrationTest is Test {
         adapter = new CoreMirrorAdapterMock();
         adapterFactory = new IntegrationAdapterFactory();
         adapterFactory.setEntity(address(adapter), true);
-        permit2 = new IntegrationPermit2();
-        reactor = new Reactor(address(adapterFactory), address(permit2));
+        reactor = new Reactor(address(adapterFactory));
         executor = new Executor(address(reactor), address(this));
         executor.grantRole(CALLER_ROLE, filler);
 
@@ -61,7 +60,7 @@ contract CoreMirrorIntegrationTest is Test {
 
         rwa.mint(swapper, 100 ether);
         vm.prank(swapper);
-        rwa.approve(address(permit2), type(uint256).max);
+        rwa.approve(address(reactor), type(uint256).max);
     }
 
     function testCoreMirrorConstantsMatchExpectedAdapterSchema() public pure {
@@ -218,18 +217,16 @@ contract CoreMirrorIntegrationTest is Test {
     }
 
     function _order(IReactor.Output[] memory outputs, uint256 amountIn) internal view returns (IReactor.Order memory) {
+        IReactor.Request memory request = IReactor.Request({
+            tokenIn: address(rwa),
+            amountIn: amountIn,
+            outputs: outputs,
+            deadline: block.timestamp + 1 days,
+            nonce: 1,
+            protocol: protocol
+        });
         return IReactor.Order({
-            request: IReactor.Request({
-                tokenIn: address(rwa),
-                amountIn: amountIn,
-                outputs: outputs,
-                deadline: block.timestamp + 1 days,
-                nonce: 1,
-                protocol: protocol
-            }),
-            swapperSignature: hex"1234",
-            swapper: swapper,
-            filler: address(executor)
+            request: request, swapperSignature: _signRequest(request), swapper: swapper, filler: address(executor)
         });
     }
 
@@ -250,6 +247,26 @@ contract CoreMirrorIntegrationTest is Test {
             )
         );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(PROTOCOL_PRIVATE_KEY, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function _signRequest(IReactor.Request memory request) internal view returns (bytes memory) {
+        bytes32 digest = keccak256(
+            abi.encodePacked(
+                hex"1901",
+                keccak256(
+                    abi.encode(
+                        DOMAIN_TYPEHASH,
+                        keccak256(bytes("Reactor")),
+                        keccak256(bytes("1")),
+                        block.chainid,
+                        address(reactor)
+                    )
+                ),
+                _hashRequest(request)
+            )
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(SWAPPER_PRIVATE_KEY, digest);
         return abi.encodePacked(r, s, v);
     }
 
@@ -388,8 +405,8 @@ contract CoreMirrorAdapterMock {
     function _transferToAccount(address vault, address token, uint256 amount) internal {
         address account = _accounts[vault][token];
         require(account != address(0), "missing account");
-        require(ERC20(token).balanceOf(address(this)) >= amount, "missing rwa");
-        ERC20(token).transfer(account, amount);
+        require(IERC20(token).balanceOf(address(this)) >= amount, "missing rwa");
+        IERC20(token).transfer(account, amount);
     }
 }
 
@@ -398,19 +415,5 @@ contract IntegrationERC20 is ERC20 {
 
     function mint(address to, uint256 amount) public {
         _mint(to, amount);
-    }
-}
-
-contract IntegrationPermit2 is IPermit2 {
-    function permitWitnessTransferFrom(
-        PermitTransferFrom memory permit,
-        SignatureTransferDetails calldata transferDetails,
-        address owner,
-        bytes32,
-        string calldata,
-        bytes calldata
-    ) public {
-        require(permit.permitted.amount == transferDetails.requestedAmount, "invalid amount");
-        ERC20(permit.permitted.token).transferFrom(owner, transferDetails.to, transferDetails.requestedAmount);
     }
 }

@@ -9,10 +9,9 @@ import {Reactor} from "../../src/Reactor.sol";
 contract DeployReactorScript is Script {
     function run() public returns (Reactor reactor) {
         address liquidLaneAdapterFactory = vm.envAddress("LIQUID_LANE_ADAPTER_FACTORY");
-        address permit2 = vm.envAddress("PERMIT2");
 
         vm.startBroadcast();
-        reactor = new Reactor(liquidLaneAdapterFactory, permit2);
+        reactor = new Reactor(liquidLaneAdapterFactory);
         vm.stopBroadcast();
 
         console2.log("Deployed Reactor:", address(reactor));
