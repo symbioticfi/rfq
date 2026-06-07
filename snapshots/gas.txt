@@ -1,123 +1,104 @@
 No files changed, compilation skipped
 
 Ran 5 tests for test/CoreMirrorIntegration.t.sol:CoreMirrorIntegrationTest
-[PASS] testCoreMirrorAdapterHandlesDirectSwapFill() (gas: 397462)
-[PASS] testCoreMirrorAdapterHandlesLocalSignedSwapSelector() (gas: 224539)
-[PASS] testCoreMirrorAdapterHandlesMixedDirectAndDiscountSwapFill() (gas: 505223)
+[PASS] testCoreMirrorAdapterHandlesDirectSwapFill() (gas: 440585)
+[PASS] testCoreMirrorAdapterHandlesLocalSignedSwapSelector() (gas: 224527)
+[PASS] testCoreMirrorAdapterHandlesMixedDirectAndDiscountSwapFill() (gas: 549016)
 [PASS] testCoreMirrorConstantsMatchExpectedAdapterSchema() (gas: 395)
 [PASS] testLocalAndCoreMirrorStructEncodingsMatch() (gas: 27440)
 
-Ran 5 tests for test/CoreMirrorIntegration.t.sol:CoreMirrorIntegrationTest
-[PASS] testCoreMirrorAdapterHandlesDirectSwapFill() (gas: 348924)
-[PASS] testCoreMirrorAdapterHandlesLocalSignedSwapSelector() (gas: 213816)
-[PASS] testCoreMirrorAdapterHandlesMixedDirectAndDiscountSwapFill() (gas: 434242)
-[PASS] testCoreMirrorConstantsMatchExpectedAdapterSchema() (gas: 123)
-[PASS] testLocalAndCoreMirrorStructEncodingsMatch() (gas: 20669)
-
-Ran 27 tests for test/Reactor.t.sol:ReactorTest
-[PASS] testExecuteRevertsWhenCallerIsNotReactor() (gas: 45914)
-[PASS] testExecuteRunsExecutorCalls() (gas: 114598)
-[PASS] testExecutorRequiresCallerRole() (gas: 5867299)
-[PASS] testFillApprovesMultipleOutputTokens() (gas: 2508353)
-[PASS] testFillEmitsFillEvent() (gas: 313755)
-[PASS] testFillExecutesDiscountSwapInputsAlongsideDirectSwapInputs() (gas: 444753)
-[PASS] testFillForwardsNativeSurplusToReactor() (gas: 196952)
-[PASS] testFillKeepsMaxApproval() (gas: 1496032)
-[PASS] testFillRejectsSignatureAfterOutputMutation() (gas: 176502)
-[PASS] testFillRevertsAndRollsBackIfAdapterFails() (gas: 303179)
-[PASS] testFillRevertsAndRollsBackIfExecutorCallFails() (gas: 369787)
-[PASS] testFillRevertsAndRollsBackIfExecutorDataIsMalformed() (gas: 350850)
-[PASS] testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() (gas: 130596)
-[PASS] testFillRevertsIfDiscountSwapAdapterIsNotFactoryEntity() (gas: 1141323)
-[PASS] testFillRevertsIfExecutorDoesNotMatchOrderFiller() (gas: 2622892)
-[PASS] testFillRevertsIfOutputsAreNotSatisfied() (gas: 379955)
-[PASS] testFillRevertsIfSwapAdapterIsNotFactoryEntity() (gas: 1125878)
-[PASS] testFillRevertsIfSwapAmountInDoesNotMatchOrderAmountIn() (gas: 100751)
-[PASS] testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() (gas: 1230553)
-[PASS] testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() (gas: 116879)
-[PASS] testFillRoutesDiscountSwapInputsToTheirAdapters() (gas: 450329)
-[PASS] testFillRoutesSwapInputsToTheirAdapters() (gas: 412879)
-[PASS] testFillTransfersNativeOutputs() (gas: 202788)
-[PASS] testFillTransfersRwaIntoAccountsAndDeliversOutputs() (gas: 410172)
-[PASS] testFillTransfersRwaIntoMultipleAccountsAndDeliversOutputs() (gas: 395311)
-[PASS] testFillUsesRequestProtocol() (gas: 387168)
-[PASS] testRequestWitnessTypeStringMatchesPermit2CanonicalOrder() (gas: 4165)
-
-Ran 27 tests for test/Reactor.t.sol:ReactorTest
-[PASS] testExecuteRevertsWhenCallerIsNotReactor() (gas: 44725)
-[PASS] testExecuteRunsExecutorCalls() (gas: 108791)
-[PASS] testExecutorRequiresCallerRole() (gas: 3457484)
-[PASS] testFillApprovesMultipleOutputTokens() (gas: 1518135)
-[PASS] testFillEmitsFillEvent() (gas: 272179)
-[PASS] testFillExecutesDiscountSwapInputsAlongsideDirectSwapInputs() (gas: 378670)
-[PASS] testFillForwardsNativeSurplusToReactor() (gas: 160962)
-[PASS] testFillKeepsMaxApproval() (gas: 964383)
-[PASS] testFillRejectsSignatureAfterOutputMutation() (gas: 157947)
-[PASS] testFillRevertsAndRollsBackIfAdapterFails() (gas: 265415)
-[PASS] testFillRevertsAndRollsBackIfExecutorCallFails() (gas: 330224)
-[PASS] testFillRevertsAndRollsBackIfExecutorDataIsMalformed() (gas: 313040)
-[PASS] testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() (gas: 105055)
-[PASS] testFillRevertsIfDiscountSwapAdapterIsNotFactoryEntity() (gas: 659432)
-[PASS] testFillRevertsIfExecutorDoesNotMatchOrderFiller() (gas: 1436570)
-[PASS] testFillRevertsIfOutputsAreNotSatisfied() (gas: 340158)
-[PASS] testFillRevertsIfSwapAdapterIsNotFactoryEntity() (gas: 649372)
-[PASS] testFillRevertsIfSwapAmountInDoesNotMatchOrderAmountIn() (gas: 85512)
-[PASS] testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() (gas: 766254)
-[PASS] testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() (gas: 96645)
-[PASS] testFillRoutesDiscountSwapInputsToTheirAdapters() (gas: 378453)
-[PASS] testFillRoutesSwapInputsToTheirAdapters() (gas: 357865)
-[PASS] testFillTransfersNativeOutputs() (gas: 166500)
-[PASS] testFillTransfersRwaIntoAccountsAndDeliversOutputs() (gas: 351475)
-[PASS] testFillTransfersRwaIntoMultipleAccountsAndDeliversOutputs() (gas: 340397)
-[PASS] testFillUsesRequestProtocol() (gas: 328228)
-[PASS] testRequestWitnessTypeStringMatchesPermit2CanonicalOrder() (gas: 4619)
+Ran 30 tests for test/Reactor.t.sol:ReactorTest
+[PASS] testExecuteRevertsWhenCallerIsNotReactor() (gas: 54415)
+[PASS] testExecuteRunsExecutorCalls() (gas: 121081)
+[PASS] testExecutorRequiresCallerRole() (gas: 5894173)
+[PASS] testFillApprovesMultipleOutputTokens() (gas: 2553128)
+[PASS] testFillEmitsFillEvent() (gas: 357832)
+[PASS] testFillExecutesDiscountSwapInputsAlongsideDirectSwapInputs() (gas: 499357)
+[PASS] testFillForwardsNativeSurplusToReactor() (gas: 237922)
+[PASS] testFillKeepsMaxApproval() (gas: 1566519)
+[PASS] testFillRejectsInvalidSwapperRequestSignature() (gas: 115422)
+[PASS] testFillRejectsSignatureAfterOutputMutation() (gas: 184353)
+[PASS] testFillRevertsAndRollsBackIfAdapterFails() (gas: 306442)
+[PASS] testFillRevertsAndRollsBackIfExecutorCallFails() (gas: 373008)
+[PASS] testFillRevertsAndRollsBackIfExecutorDataIsMalformed() (gas: 354088)
+[PASS] testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() (gas: 148531)
+[PASS] testFillRevertsIfDiscountSwapAdapterIsNotFactoryEntity() (gas: 1159191)
+[PASS] testFillRevertsIfExecutorDoesNotMatchOrderFiller() (gas: 2640711)
+[PASS] testFillRevertsIfOutputsAreNotSatisfied() (gas: 383218)
+[PASS] testFillRevertsIfRequestIsExpired() (gas: 124771)
+[PASS] testFillRevertsIfRequestNonceAlreadyUsed() (gas: 466130)
+[PASS] testFillRevertsIfSwapAdapterIsNotFactoryEntity() (gas: 1143761)
+[PASS] testFillRevertsIfSwapAmountInDoesNotMatchOrderAmountIn() (gas: 118643)
+[PASS] testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() (gas: 1246284)
+[PASS] testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() (gas: 134795)
+[PASS] testFillRevertsIfSwapperHasNotApprovedReactor() (gas: 185756)
+[PASS] testFillRoutesDiscountSwapInputsToTheirAdapters() (gas: 494563)
+[PASS] testFillRoutesSwapInputsToTheirAdapters() (gas: 477810)
+[PASS] testFillTransfersNativeOutputs() (gas: 243869)
+[PASS] testFillTransfersRwaIntoAccountsAndDeliversOutputs() (gas: 465271)
+[PASS] testFillTransfersRwaIntoMultipleAccountsAndDeliversOutputs() (gas: 439547)
+[PASS] testFillUsesRequestProtocol() (gas: 438307)
 
 ╭-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
-| src/Executor.sol:Executor Contract                                                                                                                                                                                                                                                      |                 |        |        |        |         |
+| src/Executor.sol:Executor.test Contract                                                                                                                                                                                                                                                 |                 |        |        |        |         |
 +================================================================================================================================================================================================================================================================================================================================================+
 | Deployment Cost                                                                                                                                                                                                                                                                         | Deployment Size |        |        |        |         |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-|                                                                                                                                                                                                                                                                                 1317084 |            6128 |        |        |        |         |
+|                                                                                                                                                                                                                                                                                 2484043 |           11874 |        |        |        |         |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 |                                                                                                                                                                                                                                                                                         |                 |        |        |        |         |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 | Function Name                                                                                                                                                                                                                                                                           | Min             | Avg    | Median | Max    | # Calls |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| execute                                                                                                                                                                                                                                                                                 |           26155 |  51824 |  51417 |  78307 |       4 |
+| execute                                                                                                                                                                                                                                                                                 |           27273 |  53296 |  53296 |  79319 |       2 |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256)),bytes)                                                                                                                     |           32016 | 163073 | 184486 | 347542 |      42 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256)),bytes)                                                                                                                     |           33319 | 170758 | 183693 | 364419 |      26 |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256))[],(address,((address,address,uint256,address,address,uint256,uint48),bytes,uint48),bytes,address,uint256,uint256)[],bytes) |           60376 | 220727 | 281328 | 368869 |      10 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256))[],(address,((address,address,uint256,address,address,uint256,uint48),bytes,uint48),bytes,address,uint256,uint256)[],bytes) |           88064 | 255629 | 342641 | 386380 |       5 |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256))[],bytes)                                                                                                                   |           59108 | 208312 | 257123 | 315238 |       6 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256))[],bytes)                                                                                                                   |           86842 | 241337 | 304385 | 332785 |       3 |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| grantRole                                                                                                                                                                                                                                                                               |           51148 |  51577 |  51577 |  52007 |      66 |
+| grantRole                                                                                                                                                                                                                                                                               |           52007 |  52007 |  52007 |  52007 |      36 |
 ╰-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
+
+╭---------------------------------------+-----------------+------+--------+------+---------╮
+| src/Reactor.sol:Reactor.test Contract |                 |      |        |      |         |
++==========================================================================================+
+| Deployment Cost                       | Deployment Size |      |        |      |         |
+|---------------------------------------+-----------------+------+--------+------+---------|
+|                               2824079 |           14837 |      |        |      |         |
+|---------------------------------------+-----------------+------+--------+------+---------|
+|                                       |                 |      |        |      |         |
+|---------------------------------------+-----------------+------+--------+------+---------|
+| Function Name                         | Min             | Avg  | Median | Max  | # Calls |
+|---------------------------------------+-----------------+------+--------+------+---------|
+| isUsedNonce                           |            3188 | 3188 |   3188 | 3188 |       1 |
+╰---------------------------------------+-----------------+------+--------+------+---------╯
 
 ╭-----------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
 | test/CoreMirrorIntegration.t.sol:CoreMirrorAdapterMock Contract |                 |        |        |        |         |
 +========================================================================================================================+
 | Deployment Cost                                                 | Deployment Size |        |        |        |         |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-|                                                          399930 |            1631 |        |        |        |         |
+|                                                          799496 |            3486 |        |        |        |         |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 |                                                                 |                 |        |        |        |         |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 | Function Name                                                   | Min             | Avg    | Median | Max    | # Calls |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| discountSwapCount                                               |            2344 |   2429 |   2429 |   2514 |       4 |
+| discountSwapCount                                               |            2514 |   2514 |   2514 |   2514 |       2 |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| lastAmountOut                                                   |            2366 |   2395 |   2395 |   2425 |       6 |
+| lastAmountOut                                                   |            2425 |   2425 |   2425 |   2425 |       3 |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| lastRecipient                                                   |            2434 |   2493 |   2493 |   2552 |       6 |
+| lastRecipient                                                   |            2552 |   2552 |   2552 |   2552 |       3 |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| setAccount                                                      |           44996 |  45226 |  45226 |  45457 |      20 |
+| setAccount                                                      |           45433 |  45439 |  45439 |  45445 |      10 |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| signedSwapCount                                                 |            2248 |   2337 |   2337 |   2426 |       2 |
+| signedSwapCount                                                 |            2426 |   2426 |   2426 |   2426 |       1 |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| swap                                                            |          122171 | 123632 | 123632 | 125093 |       2 |
+| swap                                                            |          125081 | 125081 | 125081 | 125081 |       1 |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| swapCount                                                       |            2278 |   2363 |   2363 |   2448 |       4 |
+| swapCount                                                       |            2448 |   2448 |   2448 |   2448 |       2 |
 ╰-----------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
 
 ╭---------------------------------------------------------------------+-----------------+-------+--------+-------+---------╮
@@ -125,15 +106,15 @@ Ran 27 tests for test/Reactor.t.sol:ReactorTest
 +==========================================================================================================================+
 | Deployment Cost                                                     | Deployment Size |       |        |       |         |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-|                                                              106839 |             272 |       |        |       |         |
+|                                                              181487 |             621 |       |        |       |         |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
 |                                                                     |                 |       |        |       |         |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
 | Function Name                                                       | Min             | Avg   | Median | Max   | # Calls |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-| isEntity                                                            |             409 |  1942 |   2409 |  2810 |       6 |
+| isEntity                                                            |             810 |  2143 |   2810 |  2810 |       3 |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-| setEntity                                                           |           44047 | 44248 |  44248 | 44450 |      10 |
+| setEntity                                                           |           44450 | 44450 |  44450 | 44450 |       5 |
 ╰---------------------------------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭------------------------------------------------------------+-----------------+-------+--------+-------+---------╮
@@ -141,19 +122,19 @@ Ran 27 tests for test/Reactor.t.sol:ReactorTest
 +=================================================================================================================+
 | Deployment Cost                                            | Deployment Size |       |        |       |         |
 |------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-|                                                     480759 |            2796 |       |        |       |         |
+|                                                     924955 |            5217 |       |        |       |         |
 |------------------------------------------------------------+-----------------+-------+--------+-------+---------|
 |                                                            |                 |       |        |       |         |
 |------------------------------------------------------------+-----------------+-------+--------+-------+---------|
 | Function Name                                              | Min             | Avg   | Median | Max   | # Calls |
 |------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-| allowance                                                  |            2768 |  2995 |   2995 |  3223 |       4 |
+| allowance                                                  |            3223 |  3223 |   3223 |  3223 |       2 |
 |------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-| approve                                                    |           46269 | 46754 |  46754 | 47240 |      10 |
+| approve                                                    |           47240 | 47240 |  47240 | 47240 |       5 |
 |------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-| balanceOf                                                  |             537 |  2093 |   2537 |  2850 |      20 |
+| balanceOf                                                  |             850 |  2250 |   2850 |  2850 |      10 |
 |------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-| mint                                                       |           50997 | 66380 |  68109 | 68935 |      16 |
+| mint                                                       |           51823 | 66793 |  68935 | 68935 |       8 |
 ╰------------------------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭-----------------------------------------+-----------------+-------+--------+-------+---------╮
@@ -161,19 +142,19 @@ Ran 27 tests for test/Reactor.t.sol:ReactorTest
 +==============================================================================================+
 | Deployment Cost                         | Deployment Size |       |        |       |         |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
-|                                  472615 |            1967 |       |        |       |         |
+|                                  929334 |            4087 |       |        |       |         |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
 |                                         |                 |       |        |       |         |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
 | Function Name                           | Min             | Avg   | Median | Max   | # Calls |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
-| discountSwapCount                       |            2344 |  2384 |   2384 |  2425 |       6 |
+| discountSwapCount                       |            2425 |  2425 |   2425 |  2425 |       3 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
-| setAccount                              |           44952 | 45193 |  45193 | 45435 |     222 |
+| setAccount                              |           45423 | 45428 |  45423 | 45435 |     123 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
-| signedSwapCount                         |            2248 |  2337 |   2337 |  2426 |       4 |
+| signedSwapCount                         |            2426 |  2426 |   2426 |  2426 |       2 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
-| swapCount                               |            2278 |  2363 |   2363 |  2448 |      12 |
+| swapCount                               |            2448 |  2448 |   2448 |  2448 |       7 |
 ╰-----------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭------------------------------------------------+-----------------+-------+--------+-------+---------╮
@@ -181,15 +162,15 @@ Ran 27 tests for test/Reactor.t.sol:ReactorTest
 +=====================================================================================================+
 | Deployment Cost                                | Deployment Size |       |        |       |         |
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
-|                                         106839 |             272 |       |        |       |         |
+|                                         181487 |             621 |       |        |       |         |
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
 |                                                |                 |       |        |       |         |
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
 | Function Name                                  | Min             | Avg   | Median | Max   | # Calls |
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
-| isEntity                                       |             409 |  2333 |   2409 |  2810 |      58 |
+| isEntity                                       |             810 |  2551 |   2810 |  2810 |      31 |
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
-| setEntity                                      |           44047 | 44248 |  44248 | 44450 |     108 |
+| setEntity                                      |           44450 | 44450 |  44450 | 44450 |      60 |
 ╰------------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭-----------------------------------------------+-----------------+-------+--------+-------+---------╮
@@ -197,19 +178,19 @@ Ran 27 tests for test/Reactor.t.sol:ReactorTest
 +====================================================================================================+
 | Deployment Cost                               | Deployment Size |       |        |       |         |
 |-----------------------------------------------+-----------------+-------+--------+-------+---------|
-|                                        493069 |            2853 |       |        |       |         |
+|                                        959200 |            5379 |       |        |       |         |
 |-----------------------------------------------+-----------------+-------+--------+-------+---------|
 |                                               |                 |       |        |       |         |
 |-----------------------------------------------+-----------------+-------+--------+-------+---------|
 | Function Name                                 | Min             | Avg   | Median | Max   | # Calls |
 |-----------------------------------------------+-----------------+-------+--------+-------+---------|
-| allowance                                     |            2790 |  3017 |   3017 |  3245 |      16 |
+| allowance                                     |            3245 |  3245 |   3245 |  3245 |       8 |
 |-----------------------------------------------+-----------------+-------+--------+-------+---------|
-| approveCalls                                  |            2410 |  2439 |   2439 |  2469 |       8 |
+| approveCalls                                  |            2469 |  2469 |   2469 |  2469 |       4 |
 |-----------------------------------------------+-----------------+-------+--------+-------+---------|
-| balanceOf                                     |            2537 |  2693 |   2693 |  2850 |       6 |
+| balanceOf                                     |            2850 |  2850 |   2850 |  2850 |       3 |
 |-----------------------------------------------+-----------------+-------+--------+-------+---------|
-| mint                                          |           68097 | 68510 |  68510 | 68923 |       6 |
+| mint                                          |           68923 | 68923 |  68923 | 68923 |       3 |
 ╰-----------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭--------------------------------------------+-----------------+------+--------+------+---------╮
@@ -217,15 +198,15 @@ Ran 27 tests for test/Reactor.t.sol:ReactorTest
 +===============================================================================================+
 | Deployment Cost                            | Deployment Size |      |        |      |         |
 |--------------------------------------------+-----------------+------+--------+------+---------|
-|                                     117239 |             321 |      |        |      |         |
+|                                     209708 |             756 |      |        |      |         |
 |--------------------------------------------+-----------------+------+--------+------+---------|
 |                                            |                 |      |        |      |         |
 |--------------------------------------------+-----------------+------+--------+------+---------|
 | Function Name                              | Min             | Avg  | Median | Max  | # Calls |
 |--------------------------------------------+-----------------+------+--------+------+---------|
-| calls                                      |            2269 | 2346 |   2346 | 2424 |       4 |
+| calls                                      |            2424 | 2424 |   2424 | 2424 |       2 |
 |--------------------------------------------+-----------------+------+--------+------+---------|
-| lastValue                                  |            2292 | 2369 |   2369 | 2447 |       2 |
+| lastValue                                  |            2447 | 2447 |   2447 | 2447 |       1 |
 ╰--------------------------------------------+-----------------+------+--------+------+---------╯
 
 ╭---------------------------------------+-----------------+-------+--------+-------+---------╮
@@ -233,17 +214,17 @@ Ran 27 tests for test/Reactor.t.sol:ReactorTest
 +============================================================================================+
 | Deployment Cost                       | Deployment Size |       |        |       |         |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-|                                480759 |            2796 |       |        |       |         |
+|                                924955 |            5217 |       |        |       |         |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
 |                                       |                 |       |        |       |         |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
 | Function Name                         | Min             | Avg   | Median | Max   | # Calls |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| allowance                             |             768 |  2795 |   2768 |  3223 |      20 |
+| allowance                             |            1223 |  3041 |   3223 |  3223 |      11 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| approve                               |           46257 | 46742 |  46742 | 47228 |      56 |
+| approve                               |           24944 | 46552 |  47228 | 47228 |      33 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| balanceOf                             |             537 |  1956 |   2537 |  2850 |     114 |
+| balanceOf                             |             850 |  2183 |   2850 |  2850 |      66 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| mint                                  |           68097 | 68517 |  68516 | 68935 |      82 |
+| mint                                  |           68923 | 68931 |  68935 | 68935 |      45 |
 ╰---------------------------------------+-----------------+-------+--------+-------+---------╯
