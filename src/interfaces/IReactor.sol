@@ -150,6 +150,13 @@ interface IReactor {
      */
     event Fill(Order order);
 
+    /**
+     * @notice Emitted when a swapper invalidates a request nonce.
+     * @param swapper Swapper address that owns the invalidated nonce.
+     * @param nonce Request nonce that was invalidated.
+     */
+    event InvalidateNonce(address indexed swapper, uint256 nonce);
+
     /* FUNCTIONS */
 
     /**
@@ -159,6 +166,12 @@ interface IReactor {
      * @return used Whether the nonce has already been consumed.
      */
     function isUsedNonce(address swapper, uint256 nonce) external view returns (bool used);
+
+    /**
+     * @notice Invalidates one caller-owned request nonce before it is filled.
+     * @param nonce Request nonce to invalidate for `msg.sender`.
+     */
+    function invalidateNonce(uint256 nonce) external;
 
     /**
      * @notice Fills an order using the caller contract as the filler.

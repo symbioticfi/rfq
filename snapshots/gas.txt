@@ -1,43 +1,44 @@
 No files changed, compilation skipped
 
 Ran 5 tests for test/CoreMirrorIntegration.t.sol:CoreMirrorIntegrationTest
-[PASS] testCoreMirrorAdapterHandlesDirectSwapFill() (gas: 440585)
+[PASS] testCoreMirrorAdapterHandlesDirectSwapFill() (gas: 440599)
 [PASS] testCoreMirrorAdapterHandlesLocalSignedSwapSelector() (gas: 224527)
-[PASS] testCoreMirrorAdapterHandlesMixedDirectAndDiscountSwapFill() (gas: 549016)
+[PASS] testCoreMirrorAdapterHandlesMixedDirectAndDiscountSwapFill() (gas: 549030)
 [PASS] testCoreMirrorConstantsMatchExpectedAdapterSchema() (gas: 395)
 [PASS] testLocalAndCoreMirrorStructEncodingsMatch() (gas: 27440)
 
-Ran 30 tests for test/Reactor.t.sol:ReactorTest
-[PASS] testExecuteRevertsWhenCallerIsNotReactor() (gas: 54415)
-[PASS] testExecuteRunsExecutorCalls() (gas: 121081)
-[PASS] testExecutorRequiresCallerRole() (gas: 5894173)
-[PASS] testFillApprovesMultipleOutputTokens() (gas: 2553128)
-[PASS] testFillEmitsFillEvent() (gas: 357832)
-[PASS] testFillExecutesDiscountSwapInputsAlongsideDirectSwapInputs() (gas: 499357)
-[PASS] testFillForwardsNativeSurplusToReactor() (gas: 237922)
-[PASS] testFillKeepsMaxApproval() (gas: 1566519)
-[PASS] testFillRejectsInvalidSwapperRequestSignature() (gas: 115422)
-[PASS] testFillRejectsSignatureAfterOutputMutation() (gas: 184353)
-[PASS] testFillRevertsAndRollsBackIfAdapterFails() (gas: 306442)
-[PASS] testFillRevertsAndRollsBackIfExecutorCallFails() (gas: 373008)
-[PASS] testFillRevertsAndRollsBackIfExecutorDataIsMalformed() (gas: 354088)
-[PASS] testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() (gas: 148531)
+Ran 31 tests for test/Reactor.t.sol:ReactorTest
+[PASS] testExecuteRevertsWhenCallerIsNotReactor() (gas: 54393)
+[PASS] testExecuteRunsExecutorCalls() (gas: 121103)
+[PASS] testExecutorRequiresCallerRole() (gas: 5969786)
+[PASS] testFillApprovesMultipleOutputTokens() (gas: 2553142)
+[PASS] testFillEmitsFillEvent() (gas: 357846)
+[PASS] testFillExecutesDiscountSwapInputsAlongsideDirectSwapInputs() (gas: 499349)
+[PASS] testFillKeepsMaxApproval() (gas: 1566525)
+[PASS] testFillRefundsNativeSurplusToExecutor() (gas: 245106)
+[PASS] testFillRejectsInvalidSwapperRequestSignature() (gas: 117971)
+[PASS] testFillRejectsSignatureAfterOutputMutation() (gas: 186902)
+[PASS] testFillRevertsAndRollsBackIfAdapterFails() (gas: 306420)
+[PASS] testFillRevertsAndRollsBackIfExecutorCallFails() (gas: 372986)
+[PASS] testFillRevertsAndRollsBackIfExecutorDataIsMalformed() (gas: 354066)
+[PASS] testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() (gas: 148487)
 [PASS] testFillRevertsIfDiscountSwapAdapterIsNotFactoryEntity() (gas: 1159191)
-[PASS] testFillRevertsIfExecutorDoesNotMatchOrderFiller() (gas: 2640711)
-[PASS] testFillRevertsIfOutputsAreNotSatisfied() (gas: 383218)
-[PASS] testFillRevertsIfRequestIsExpired() (gas: 124771)
-[PASS] testFillRevertsIfRequestNonceAlreadyUsed() (gas: 466130)
-[PASS] testFillRevertsIfSwapAdapterIsNotFactoryEntity() (gas: 1143761)
-[PASS] testFillRevertsIfSwapAmountInDoesNotMatchOrderAmountIn() (gas: 118643)
-[PASS] testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() (gas: 1246284)
-[PASS] testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() (gas: 134795)
-[PASS] testFillRevertsIfSwapperHasNotApprovedReactor() (gas: 185756)
-[PASS] testFillRoutesDiscountSwapInputsToTheirAdapters() (gas: 494563)
-[PASS] testFillRoutesSwapInputsToTheirAdapters() (gas: 477810)
-[PASS] testFillTransfersNativeOutputs() (gas: 243869)
-[PASS] testFillTransfersRwaIntoAccountsAndDeliversOutputs() (gas: 465271)
-[PASS] testFillTransfersRwaIntoMultipleAccountsAndDeliversOutputs() (gas: 439547)
-[PASS] testFillUsesRequestProtocol() (gas: 438307)
+[PASS] testFillRevertsIfExecutorDoesNotMatchOrderFiller() (gas: 2619646)
+[PASS] testFillRevertsIfOutputsAreNotSatisfied() (gas: 383196)
+[PASS] testFillRevertsIfRequestIsExpired() (gas: 106209)
+[PASS] testFillRevertsIfRequestNonceAlreadyUsed() (gas: 445080)
+[PASS] testFillRevertsIfRequestNonceWasInvalidated() (gas: 270433)
+[PASS] testFillRevertsIfSwapAdapterIsNotFactoryEntity() (gas: 1143717)
+[PASS] testFillRevertsIfSwapAmountInDoesNotMatchOrderAmountIn() (gas: 118621)
+[PASS] testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() (gas: 1246240)
+[PASS] testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() (gas: 134729)
+[PASS] testFillRevertsIfSwapperHasNotApprovedReactor() (gas: 185823)
+[PASS] testFillRoutesDiscountSwapInputsToTheirAdapters() (gas: 494577)
+[PASS] testFillRoutesSwapInputsToTheirAdapters() (gas: 477802)
+[PASS] testFillTransfersNativeOutputs() (gas: 243861)
+[PASS] testFillTransfersRwaIntoAccountsAndDeliversOutputs() (gas: 465285)
+[PASS] testFillTransfersRwaIntoMultipleAccountsAndDeliversOutputs() (gas: 439539)
+[PASS] testFillUsesRequestProtocol() (gas: 440980)
 
 ╭-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
 | src/Executor.sol:Executor.test Contract                                                                                                                                                                                                                                                 |                 |        |        |        |         |
@@ -52,28 +53,30 @@ Ran 30 tests for test/Reactor.t.sol:ReactorTest
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 | execute                                                                                                                                                                                                                                                                                 |           27273 |  53296 |  53296 |  79319 |       2 |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256)),bytes)                                                                                                                     |           33319 | 170758 | 183693 | 364419 |      26 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256)),bytes)                                                                                                                     |           33319 | 164786 | 161702 | 364433 |      27 |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256))[],(address,((address,address,uint256,address,address,uint256,uint48),bytes,uint48),bytes,address,uint256,uint256)[],bytes) |           88064 | 255629 | 342641 | 386380 |       5 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256))[],(address,((address,address,uint256,address,address,uint256,uint48),bytes,uint48),bytes,address,uint256,uint256)[],bytes) |           88042 | 255629 | 342655 | 386394 |       5 |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256))[],bytes)                                                                                                                   |           86842 | 241337 | 304385 | 332785 |       3 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address),bytes,(address,(address,address,address,uint256,uint256))[],bytes)                                                                                                                   |           86798 | 241317 | 304377 | 332777 |       3 |
 |-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| grantRole                                                                                                                                                                                                                                                                               |           52007 |  52007 |  52007 |  52007 |      36 |
+| grantRole                                                                                                                                                                                                                                                                               |           52007 |  52007 |  52007 |  52007 |      37 |
 ╰-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
 
-╭---------------------------------------+-----------------+------+--------+------+---------╮
-| src/Reactor.sol:Reactor.test Contract |                 |      |        |      |         |
-+==========================================================================================+
-| Deployment Cost                       | Deployment Size |      |        |      |         |
-|---------------------------------------+-----------------+------+--------+------+---------|
-|                               2824079 |           14837 |      |        |      |         |
-|---------------------------------------+-----------------+------+--------+------+---------|
-|                                       |                 |      |        |      |         |
-|---------------------------------------+-----------------+------+--------+------+---------|
-| Function Name                         | Min             | Avg  | Median | Max  | # Calls |
-|---------------------------------------+-----------------+------+--------+------+---------|
-| isUsedNonce                           |            3188 | 3188 |   3188 | 3188 |       1 |
-╰---------------------------------------+-----------------+------+--------+------+---------╯
+╭---------------------------------------+-----------------+-------+--------+-------+---------╮
+| src/Reactor.sol:Reactor.test Contract |                 |       |        |       |         |
++============================================================================================+
+| Deployment Cost                       | Deployment Size |       |        |       |         |
+|---------------------------------------+-----------------+-------+--------+-------+---------|
+|                               2899569 |           15186 |       |        |       |         |
+|---------------------------------------+-----------------+-------+--------+-------+---------|
+|                                       |                 |       |        |       |         |
+|---------------------------------------+-----------------+-------+--------+-------+---------|
+| Function Name                         | Min             | Avg   | Median | Max   | # Calls |
+|---------------------------------------+-----------------+-------+--------+-------+---------|
+| invalidateNonce                       |           45595 | 45595 |  45595 | 45595 |       1 |
+|---------------------------------------+-----------------+-------+--------+-------+---------|
+| isUsedNonce                           |            3211 |  3211 |   3211 |  3211 |       3 |
+╰---------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭-----------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
 | test/CoreMirrorIntegration.t.sol:CoreMirrorAdapterMock Contract |                 |        |        |        |         |
@@ -150,7 +153,7 @@ Ran 30 tests for test/Reactor.t.sol:ReactorTest
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
 | discountSwapCount                       |            2425 |  2425 |   2425 |  2425 |       3 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
-| setAccount                              |           45423 | 45428 |  45423 | 45435 |     123 |
+| setAccount                              |           45423 | 45428 |  45423 | 45435 |     127 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
 | signedSwapCount                         |            2426 |  2426 |   2426 |  2426 |       2 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
@@ -170,7 +173,7 @@ Ran 30 tests for test/Reactor.t.sol:ReactorTest
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
 | isEntity                                       |             810 |  2551 |   2810 |  2810 |      31 |
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
-| setEntity                                      |           44450 | 44450 |  44450 | 44450 |      60 |
+| setEntity                                      |           44450 | 44450 |  44450 | 44450 |      62 |
 ╰------------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭-----------------------------------------------+-----------------+-------+--------+-------+---------╮
@@ -222,9 +225,9 @@ Ran 30 tests for test/Reactor.t.sol:ReactorTest
 |---------------------------------------+-----------------+-------+--------+-------+---------|
 | allowance                             |            1223 |  3041 |   3223 |  3223 |      11 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| approve                               |           24944 | 46552 |  47228 | 47228 |      33 |
+| approve                               |           24944 | 46572 |  47228 | 47228 |      34 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| balanceOf                             |             850 |  2183 |   2850 |  2850 |      66 |
+| balanceOf                             |             850 |  2202 |   2850 |  2850 |      68 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| mint                                  |           68923 | 68931 |  68935 | 68935 |      45 |
+| mint                                  |           68923 | 68930 |  68935 | 68935 |      47 |
 ╰---------------------------------------+-----------------+-------+--------+-------+---------╯

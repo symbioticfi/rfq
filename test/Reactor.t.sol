@@ -230,7 +230,7 @@ contract ReactorTest is Test {
         assertEq(rwa.balanceOf(vault0Account), 5 ether);
     }
 
-    function testFillForwardsNativeSurplusToReactor() public {
+    function testFillRefundsNativeSurplusToExecutor() public {
         vm.deal(address(executor), 3 ether);
 
         IReactor.Output[] memory outputs = new IReactor.Output[](1);
@@ -247,8 +247,8 @@ contract ReactorTest is Test {
         executor.fill(order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(swapper.balance, balanceBefore + 2 ether);
-        assertEq(address(executor).balance, 0);
-        assertEq(address(reactor).balance, 1 ether);
+        assertEq(address(executor).balance, 1 ether);
+        assertEq(address(reactor).balance, 0);
     }
 
     function testFillEmitsFillEvent() public {
@@ -448,6 +448,35 @@ contract ReactorTest is Test {
         assertEq(IReactor(address(reactor)).isUsedNonce(swapper, order.request.nonce), true);
         assertEq(rwa.balanceOf(vault0Account), 5 ether);
         assertEq(outputToken.balanceOf(swapper), 5 ether);
+    }
+
+    function testFillRevertsIfRequestNonceWasInvalidated() public {
+        outputToken.mint(address(executor), 5 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectEmit(true, false, false, true, address(reactor));
+        emit IReactor.InvalidateNonce(swapper, order.request.nonce);
+
+        vm.prank(swapper);
+        reactor.invalidateNonce(order.request.nonce);
+
+        assertEq(IReactor(address(reactor)).isUsedNonce(swapper, order.request.nonce), true);
+        assertEq(IReactor(address(reactor)).isUsedNonce(filler, order.request.nonce), false);
+
+        vm.expectRevert(IReactor.NonceUsed.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+        assertEq(outputToken.balanceOf(swapper), 0);
     }
 
     function testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() public {
