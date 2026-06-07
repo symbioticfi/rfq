@@ -47,6 +47,13 @@ contract Reactor is EIP712, IReactor {
     }
 
     /// @inheritdoc IReactor
+    function invalidateNonce(uint256 nonce) public {
+        _isUsedNonce[msg.sender].set(nonce);
+
+        emit InvalidateNonce(msg.sender, nonce);
+    }
+
+    /// @inheritdoc IReactor
     function fill(
         Order memory order,
         bytes memory protocolSignature,
@@ -95,6 +102,15 @@ contract Reactor is EIP712, IReactor {
         DiscountSwapInput[] memory discountSwapInputs,
         bytes memory executorData
     ) internal {
+        if (order.filler != msg.sender) {
+            revert InvalidFiller();
+        }
+        if (block.timestamp > order.request.deadline) {
+            revert ExpiredRequest();
+        }
+        if (isUsedNonce(order.swapper, order.request.nonce)) {
+            revert NonceUsed();
+        }
         if (!SignatureChecker.isValidSignatureNow(
                 order.request.protocol, _hashTypedDataV4(_hashOrder(order)), protocolSignature
             )) {
@@ -104,15 +120,6 @@ contract Reactor is EIP712, IReactor {
                 order.swapper, _hashTypedDataV4(_hashRequest(order.request)), order.swapperSignature
             )) {
             revert InvalidProtocolSignature();
-        }
-        if (order.filler != msg.sender) {
-            revert InvalidFiller();
-        }
-        if (block.timestamp > order.request.deadline) {
-            revert ExpiredRequest();
-        }
-        if (isUsedNonce(order.swapper, order.request.nonce)) {
-            revert NonceUsed();
         }
 
         uint256 totalAmountIn;
@@ -158,6 +165,11 @@ contract Reactor is EIP712, IReactor {
                 IERC20(order.request.outputs[i].token)
                     .safeTransferFrom(msg.sender, order.request.outputs[i].recipient, order.request.outputs[i].amount);
             }
+        }
+
+        uint256 balance = address(this).balance;
+        if (balance != 0) {
+            payable(msg.sender).sendValue(balance);
         }
 
         emit Fill(order);
