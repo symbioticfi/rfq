@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 
 import {Executor} from "../src/Executor.sol";
 import {Reactor} from "../src/Reactor.sol";
-import {CALLER_ROLE, IExecutor} from "../src/interfaces/IExecutor.sol";
+import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {IInstantRedemptionAdapter} from "../src/interfaces/IInstantRedemptionAdapter.sol";
 import {IReactor, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
@@ -42,8 +42,7 @@ contract ReactorMainnetForkTest is Test {
         adapterFactory = new ForkAdapterFactory();
         adapterFactory.setEntity(address(adapter), true);
         reactor = new Reactor(address(adapterFactory));
-        executor = new Executor(address(reactor), address(this));
-        executor.grantRole(CALLER_ROLE, filler);
+        executor = new Executor(address(reactor), address(this), _callers(filler));
 
         adapter.setAccount(vault, DAI, vaultAccount);
 
@@ -121,6 +120,11 @@ contract ReactorMainnetForkTest is Test {
     function _singleUsdcOutput(uint256 amount) internal view returns (IReactor.Output[] memory outputs) {
         outputs = new IReactor.Output[](1);
         outputs[0] = IReactor.Output({token: USDC, amount: amount, recipient: swapper});
+    }
+
+    function _callers(address caller) internal pure returns (address[] memory callers_) {
+        callers_ = new address[](1);
+        callers_[0] = caller;
     }
 
     function _order(IReactor.Output[] memory outputs, uint256 amountIn, uint256 nonce)

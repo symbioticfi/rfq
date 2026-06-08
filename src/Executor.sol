@@ -2,18 +2,18 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
-import {IExecutor, CALLER_ROLE} from "./interfaces/IExecutor.sol";
+import {IExecutor} from "./interfaces/IExecutor.sol";
 import {IInstantRedemptionAdapter} from "./interfaces/IInstantRedemptionAdapter.sol";
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
 
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title Executor
-/// @notice Role-gated executor that forwards fills into Reactor and handles execution callbacks.
-contract Executor is AccessControl, IExecutor {
+/// @notice Caller-gated executor that forwards fills into Reactor and handles execution callbacks.
+contract Executor is Ownable, IExecutor {
     using Address for address payable;
     using SafeERC20 for IERC20;
     using Address for address;
@@ -23,26 +23,31 @@ contract Executor is AccessControl, IExecutor {
     /// @dev Reactor that is allowed to trigger execution callbacks.
     address internal immutable REACTOR;
 
+    /* STATE VARIABLES */
+
+    /// @dev Callers that are allowed to fill orders.
+    address[] public callers;
+
     /* CONSTRUCTOR */
 
-    constructor(address reactor, address admin) {
+    constructor(address reactor, address owner, address[] memory initCallers) Ownable(owner) {
         REACTOR = reactor;
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        callers = initCallers;
     }
 
     /* MODIFIERS */
 
-    /// @dev Reverts unless the caller has the caller role.
+    /// @dev Reverts unless the caller is in the allowed caller list.
     modifier onlyCaller() {
-        if (!hasRole(CALLER_ROLE, msg.sender)) {
+        if (!_isCaller(msg.sender)) {
             revert NotCaller();
         }
 
         _;
     }
 
-    /* PUBLIC FUNCTIONS */
+    /* PUBLIC FUNCTIONS (CALLER) */
 
     /// @inheritdoc IExecutor
     function fill(
@@ -116,6 +121,27 @@ contract Executor is AccessControl, IExecutor {
         if (balance != 0) {
             payable(REACTOR).sendValue(balance);
         }
+    }
+
+    /* PUBLIC FUNCTIONS (OWNER) */
+
+    /// @inheritdoc IExecutor
+    function setCallers(address[] calldata newCallers) public onlyOwner {
+        callers = newCallers;
+
+        emit SetCallers(newCallers);
+    }
+
+    /* INTERNAL FUNCTIONS */
+
+    /// @dev Returns whether `caller` can invoke fill entrypoints.
+    function _isCaller(address caller) internal view returns (bool) {
+        for (uint256 i; i < callers.length; ++i) {
+            if (callers[i] == caller) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /* RECEIVE FUNCTION */
