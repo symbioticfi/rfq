@@ -160,6 +160,12 @@ interface IReactor {
     /* FUNCTIONS */
 
     /**
+     * @notice Returns the LiquidLane adapter factory registry used for adapter validation.
+     * @return factory LiquidLane adapter factory address.
+     */
+    function LIQUID_LANE_ADAPTER_FACTORY() external view returns (address factory);
+
+    /**
      * @notice Returns whether a swapper request nonce has been consumed.
      * @param swapper Address that owns the nonce.
      * @param nonce Request nonce to check.

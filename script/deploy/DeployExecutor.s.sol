@@ -10,9 +10,12 @@ contract DeployExecutorScript is Script {
     function run() public returns (Executor executor) {
         address reactor = vm.envAddress("REACTOR");
         address admin = vm.envAddress("ADMIN");
+        address caller = vm.envAddress("CALLER");
+        address[] memory callers = new address[](1);
+        callers[0] = caller;
 
         vm.startBroadcast();
-        executor = new Executor(reactor, admin);
+        executor = new Executor(reactor, admin, callers);
         vm.stopBroadcast();
 
         console2.log("Deployed Executor:", address(executor));

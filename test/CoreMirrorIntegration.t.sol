@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 
 import {Executor} from "../src/Executor.sol";
 import {Reactor} from "../src/Reactor.sol";
-import {CALLER_ROLE, IExecutor} from "../src/interfaces/IExecutor.sol";
+import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
     IInstantRedemptionAdapter as LocalInstantRedemptionAdapter
 } from "../src/interfaces/IInstantRedemptionAdapter.sol";
@@ -49,8 +49,7 @@ contract CoreMirrorIntegrationTest is Test {
         adapterFactory = new IntegrationAdapterFactory();
         adapterFactory.setEntity(address(adapter), true);
         reactor = new Reactor(address(adapterFactory));
-        executor = new Executor(address(reactor), address(this));
-        executor.grantRole(CALLER_ROLE, filler);
+        executor = new Executor(address(reactor), address(this), _callers(filler));
 
         rwa = new IntegrationERC20("RWA", "RWA");
         outputToken = new IntegrationERC20("USD", "USD");
@@ -214,6 +213,11 @@ contract CoreMirrorIntegrationTest is Test {
         assertEq(adapter.signedSwapCount(), 1);
         assertEq(adapter.lastRecipient(), filler);
         assertEq(adapter.lastAmountOut(), 3 ether);
+    }
+
+    function _callers(address caller) internal pure returns (address[] memory callers_) {
+        callers_ = new address[](1);
+        callers_[0] = caller;
     }
 
     function _order(IReactor.Output[] memory outputs, uint256 amountIn) internal view returns (IReactor.Order memory) {

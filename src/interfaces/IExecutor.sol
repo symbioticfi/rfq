@@ -4,20 +4,15 @@ pragma solidity ^0.8.0;
 
 import {IReactor} from "./IReactor.sol";
 
-import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
-
-// keccak256("CALLER_ROLE")
-bytes32 constant CALLER_ROLE = 0x74a23095bc1d81f421b8f4e555b0abbafaf53263fb97dffca9f89a4ca3115d41;
-
 /**
  * @title IExecutor
- * @notice Interface for role-gated executor contracts used by the Reactor.
+ * @notice Interface for caller-gated executor contracts used by the Reactor.
  */
-interface IExecutor is IAccessControl {
+interface IExecutor {
     /* ERRORS */
 
     /**
-     * @notice Raised when the caller does not have the required role.
+     * @notice Raised when the caller is not in the allowed caller list.
      */
     error NotCaller();
 
@@ -40,10 +35,25 @@ interface IExecutor is IAccessControl {
         bytes data;
     }
 
+    /* EVENTS */
+
+    /**
+     * @notice Emitted when the allowed caller list is replaced.
+     * @param newCallers Addresses allowed to call the fill entrypoints.
+     */
+    event SetCallers(address[] newCallers);
+
     /* FUNCTIONS */
 
     /**
-     * @notice Role-gated caller-facing entrypoint that forwards a fill into Reactor.
+     * @notice Returns an allowed caller by index.
+     * @param index Caller index.
+     * @return caller Caller address.
+     */
+    function callers(uint256 index) external view returns (address caller);
+
+    /**
+     * @notice Caller-gated entrypoint that forwards a fill into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
      * @param swapInput Direct-caller adapter swap input.
@@ -57,7 +67,7 @@ interface IExecutor is IAccessControl {
     ) external;
 
     /**
-     * @notice Role-gated caller-facing entrypoint that forwards a multi-leg fill into Reactor.
+     * @notice Caller-gated entrypoint that forwards a multi-leg fill into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
      * @param swapInputs Direct-caller adapter swap inputs.
@@ -71,7 +81,7 @@ interface IExecutor is IAccessControl {
     ) external;
 
     /**
-     * @notice Role-gated caller-facing entrypoint that forwards direct and discount-backed legs into Reactor.
+     * @notice Caller-gated entrypoint that forwards direct and discount-backed legs into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
      * @param swapInputs Direct-caller adapter swap inputs.
@@ -99,4 +109,10 @@ interface IExecutor is IAccessControl {
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
     ) external;
+
+    /**
+     * @notice Replaces the allowed caller list.
+     * @param newCallers Addresses allowed to call the fill entrypoints.
+     */
+    function setCallers(address[] calldata newCallers) external;
 }

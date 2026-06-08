@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 
 import {Executor} from "../src/Executor.sol";
 import {Reactor} from "../src/Reactor.sol";
-import {CALLER_ROLE, IExecutor} from "../src/interfaces/IExecutor.sol";
+import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {IInstantRedemptionAdapter} from "../src/interfaces/IInstantRedemptionAdapter.sol";
 import {IReactor, NATIVE, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
@@ -47,8 +47,7 @@ contract ReactorTest is Test {
         adapterFactory.setEntity(address(secondaryAdapter), true);
         callTarget = new MockCallTarget();
         reactor = new Reactor(address(adapterFactory));
-        executor = new Executor(address(reactor), address(this));
-        executor.grantRole(CALLER_ROLE, filler);
+        executor = new Executor(address(reactor), address(this), _callers(filler));
 
         rwa = new MockERC20("RWA", "RWA");
         outputToken = new MockERC20("USD", "USD");
@@ -160,9 +159,9 @@ contract ReactorTest is Test {
         assertEq(outputToken.balanceOf(swapper), 0);
     }
 
-    function testExecutorRequiresCallerRole() public {
+    function testExecutorRequiresCaller() public {
         Reactor customReactor = new Reactor(address(adapterFactory));
-        Executor lockedExecutor = new Executor(address(customReactor), address(this));
+        Executor lockedExecutor = new Executor(address(customReactor), address(this), new address[](0));
 
         outputToken.mint(address(lockedExecutor), 5 ether);
 
@@ -179,7 +178,7 @@ contract ReactorTest is Test {
         vm.prank(filler);
         lockedExecutor.fill(order, protocolSignature, swap, abi.encode(calls));
 
-        lockedExecutor.grantRole(CALLER_ROLE, filler);
+        lockedExecutor.setCallers(_callers(filler));
         vm.prank(swapper);
         rwa.approve(address(customReactor), type(uint256).max);
 
@@ -193,7 +192,7 @@ contract ReactorTest is Test {
     }
 
     function testFillRevertsIfExecutorDoesNotMatchOrderFiller() public {
-        Executor otherExecutor = new Executor(address(reactor), address(this));
+        Executor otherExecutor = new Executor(address(reactor), address(this), _callers(filler));
 
         IReactor.Output[] memory outputs = new IReactor.Output[](1);
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
@@ -752,6 +751,11 @@ contract ReactorTest is Test {
 
         assertEq(callTarget.lastValue(), 7);
         assertEq(callTarget.calls(), 1);
+    }
+
+    function _callers(address caller) internal pure returns (address[] memory callers_) {
+        callers_ = new address[](1);
+        callers_[0] = caller;
     }
 
     function _order(IReactor.Output[] memory outputs) internal view returns (IReactor.Order memory) {

@@ -46,6 +46,7 @@ Example `Executor` deployment:
 ```bash
 REACTOR=0x... \
 ADMIN=0x... \
+CALLER=0x... \
 forge script script/deploy/DeployExecutor.s.sol:DeployExecutorScript \
   --rpc-url "$RPC_URL" \
   --private-key "$PRIVATE_KEY" \
@@ -61,5 +62,5 @@ forge script script/deploy/DeployExecutor.s.sol:DeployExecutorScript \
 
 ## Notes
 
-- `Executor` is role-gated through `CALLER_ROLE`.
+- `Executor` is caller-gated through an owner-managed caller list.
 - `Reactor` uses swapper ERC20 allowances, Reactor-managed request nonces, request deadlines, and factory-registered LiquidLane adapters as its execution primitives.

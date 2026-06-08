@@ -22,7 +22,7 @@ contract Reactor is EIP712, IReactor {
 
     /* IMMUTABLES */
 
-    /// @dev Factory registry that validates LiquidLane adapter entities.
+    /// @inheritdoc IReactor
     address public immutable LIQUID_LANE_ADAPTER_FACTORY;
 
     /* STORAGE */
