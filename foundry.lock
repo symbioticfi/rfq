@@ -7,8 +7,8 @@
   },
   "lib/core-mirror": {
     "branch": {
-      "name": "ir-adapter",
-      "rev": "24e635b91645c4c144e982ad21f2346e0ec0736c"
+      "name": "delegator-simplify",
+      "rev": "8e5c03316c8bf7420b71abb3abb4a78c9dd9b6bd"
     }
   },
   "lib/forge-std": {
@@ -25,8 +25,8 @@
   },
   "lib/openzeppelin-contracts": {
     "tag": {
-      "name": "v5.6.1",
-      "rev": "5fd1781b1454fd1ef8e722282f86f9293cacf256"
+      "name": "v5.5.0",
+      "rev": "fcbae5394ae8ad52d8e580a3477db99814b9d565"
     }
   }
 }

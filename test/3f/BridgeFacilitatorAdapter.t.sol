@@ -3,7 +3,8 @@ pragma solidity 0.8.28;
 
 import {BridgeFacilitatorAdapter} from "../../src/3f/BridgeFacilitatorAdapter.sol";
 
-import {IAdapter} from "@symbioticfi/core/src/interfaces/vault/adapters/IAdapter.sol";
+import {AdapterFactory} from "@symbioticfi/core/src/contracts/adapters/AdapterFactory.sol";
+import {IAdapter} from "@symbioticfi/core/src/interfaces/adapters/IAdapter.sol";
 
 import {IRequestCallback} from "grunt/src/interfaces/request/IRequestCallback.sol";
 import {Offer} from "grunt/src/interfaces/request/IOfferReceiver.sol";
@@ -24,7 +25,7 @@ contract TestERC20 is ERC20 {
     }
 }
 
-/// @dev Minimal IRegistry-style entity tracker for `Adapter._validateVault`.
+/// @dev Minimal IRegistry-style entity tracker for `Adapter._initialize`'s vault validation.
 contract MockVaultFactory {
     mapping(address => bool) public isEntity;
 
@@ -33,37 +34,9 @@ contract MockVaultFactory {
     }
 }
 
-/// @dev Curator registry stub (only needed if the recover() path is exercised).
-contract MockCuratorRegistry {
-    mapping(address => address) internal _curator;
-
-    function setCurator(address vault, address curator) external {
-        _curator[vault] = curator;
-    }
-
-    function getCurator(address vault) external view returns (address) {
-        return _curator[vault];
-    }
-}
-
-/// @dev Receives donation rewards; pulls the approved collateral, mirroring the real Rewards contract.
-///      `msg.sender` is the adapter (it approves this contract before calling).
-contract MockRewards {
-    IERC20 public token;
-    uint256 public totalDistributed;
-
-    constructor(IERC20 token_) {
-        token = token_;
-    }
-
-    function distributeDonationRewards(address, uint256 amount) external {
-        token.transferFrom(msg.sender, address(this), amount);
-        totalDistributed += amount;
-    }
-}
-
-/// @dev Settable 3F RequestWhitelist stub.
-contract MockWhitelist is IWhitelist {
+/// @dev Settable RequestWhitelist stub, to exercise the not-attested / circuit-breaker reverts that the
+///      always-attesting production `MockWhitelist` can't.
+contract SettableWhitelist is IWhitelist {
     mapping(address => WhitelistStatus) internal _status;
 
     function set(address a, WhitelistStatus s) external {
@@ -75,57 +48,82 @@ contract MockWhitelist is IWhitelist {
     }
 }
 
-/// @dev Faithful VaultV2 stand-in: replicates the exact `_allocateAdapter` / `deallocateAdapter`
-///      semantics read from core-mirror VaultV2.sol — min-caps (incl. `adapter.allocatable(this)`),
-///      the callback into `adapter.allocate()`, and `adapterAllocated` tracking.
+/// @dev VaultV2 stand-in: `asset()`, `delegator()`, and delegator-only `pull`/`recall`. Holds the idle
+///      collateral the JIT pull draws from; `recall` relies on the max approval set in `Adapter._initialize`.
 contract MockVaultV2 {
     TestERC20 public collateral;
-    mapping(address => uint256) public adapterLimit;
-    mapping(address => uint256) public adapterAllocated;
+    address public delegator;
 
     constructor(TestERC20 collateral_) {
         collateral = collateral_;
     }
 
-    function setAdapterLimit(address adapter, uint256 limit) external {
-        adapterLimit[adapter] = limit;
+    function setDelegator(address delegator_) external {
+        delegator = delegator_;
     }
 
-    /// @dev Idle collateral available to allocate (the vault's free balance).
-    function allocatable() public view returns (uint256) {
-        return collateral.balanceOf(address(this));
+    function asset() external view returns (address) {
+        return address(collateral);
     }
 
-    function allocateAdapter(address adapter, uint256 amount) external returns (uint256 allocated) {
-        uint256 limitRoom = adapterLimit[adapter] - adapterAllocated[adapter];
-        allocated = _min(_min(_min(amount, limitRoom), allocatable()), IAdapter(adapter).allocatable(address(this)));
-        if (allocated > 0) {
-            adapterAllocated[adapter] += allocated;
-            collateral.transfer(adapter, allocated);
-            IAdapter(adapter).allocate(allocated);
-        }
+    function pull(address to, uint256 amount) external {
+        require(msg.sender == delegator, "only delegator");
+        collateral.transfer(to, amount);
     }
 
-    function deallocateAdapter(address adapter, uint256 amount) external returns (uint256 deallocated) {
-        deallocated = IAdapter(adapter).deallocate(amount);
-        if (deallocated > 0) {
-            adapterAllocated[adapter] -= deallocated;
-            collateral.transferFrom(adapter, address(this), deallocated);
-        }
-    }
-
-    function _min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a < b ? a : b;
+    function recall(address from, uint256 amount) external {
+        require(msg.sender == delegator, "only delegator");
+        collateral.transferFrom(from, address(this), amount);
     }
 }
 
-/// @dev 3F Request stand-in. Emulates `consume()` (callback then principal pull) and `burnAll()`
-///      (returns principal + yield to the receiver). PT/YT issuance is elided; the test funds the
-///      request with the yield to simulate the Facility's repayment.
+/// @dev UniversalDelegator stand-in replicating `allocateExact`'s clamp/pull semantics (cap by
+///      `limitOf - totalAssets`, vault free balance, `allocatable()`) and the `deallocate` recall path.
+///      As the registered delegator it is the only authorized caller of the adapter's `onlyDelegator` hooks.
+contract MockDelegator {
+    MockVaultV2 public vault;
+    mapping(address => uint256) public limit;
+
+    constructor(MockVaultV2 vault_) {
+        vault = vault_;
+    }
+
+    function setLimit(address adapter, uint256 newLimit) external {
+        limit[adapter] = newLimit;
+    }
+
+    function limitOf(address adapter) external view returns (uint256) {
+        return limit[adapter];
+    }
+
+    function allocateExact(address adapter, uint256 assets) external returns (uint256 allocated) {
+        uint256 totalAssets_ = IAdapter(adapter).totalAssets();
+        uint256 cap = limit[adapter] > totalAssets_ ? limit[adapter] - totalAssets_ : 0;
+        if (assets > cap) assets = cap;
+        uint256 free = vault.collateral().balanceOf(address(vault));
+        if (assets > free) assets = free;
+        uint256 allocatable_ = IAdapter(adapter).allocatable();
+        if (assets > allocatable_) assets = allocatable_;
+        if (assets == 0) return 0;
+
+        vault.pull(adapter, assets);
+        allocated = IAdapter(adapter).allocate(assets);
+    }
+
+    function deallocate(address adapter, uint256 amount) external returns (uint256 deallocated) {
+        deallocated = IAdapter(adapter).deallocate(amount);
+        if (deallocated > 0) {
+            vault.recall(adapter, deallocated);
+        }
+    }
+}
+
+/// @dev 3F Request stand-in. `consume()` emulates pull-mode (maker callback, then pull `principal`);
+///      `burnAll()` returns principal + yield, simulating Facility repayment. PT/YT issuance is elided.
 contract MockRequest {
     TestERC20 public assetToken;
     bool public canWithdraw;
-    uint256 public pAssets; // principal returned on burnAll (can be < principal for a loss)
+    uint256 public pAssets; // principal returned on burnAll (can be < principal on a loss)
     uint256 public yAssets; // yield returned on burnAll
 
     constructor(TestERC20 assetToken_) {
@@ -140,7 +138,6 @@ contract MockRequest {
         canWithdraw = v;
     }
 
-    /// @dev Emulates grunt Request.consume: invoke the maker callback, then pull `principal`.
     function consume(address adapter, uint256 principal, uint256 yield) external {
         Offer memory o = Offer({
             maker: adapter,
@@ -154,7 +151,6 @@ contract MockRequest {
         assetToken.transferFrom(adapter, address(this), principal);
     }
 
-    /// @dev Configure the redemption payout, simulating Facility repayment of principal (+yield).
     function fundRedemption(uint256 pAssets_, uint256 yAssets_) external {
         pAssets = pAssets_;
         yAssets = yAssets_;
@@ -173,63 +169,65 @@ contract MockRequest {
 contract BridgeFacilitatorAdapterTest is Test {
     TestERC20 internal usdc;
     MockVaultFactory internal vaultFactory;
-    MockCuratorRegistry internal curatorRegistry;
-    MockRewards internal rewards;
-    MockWhitelist internal whitelist;
+    SettableWhitelist internal whitelist;
     MockVaultV2 internal vault;
+    MockDelegator internal delegator;
     MockRequest internal request;
+    AdapterFactory internal adapterFactory;
     BridgeFacilitatorAdapter internal adapter;
 
     uint256 internal constant SIGNER_PK = 0xB0B;
     address internal signer;
 
-    uint128 internal constant MAX_PRINCIPAL = 1_000_000e6;
-    uint128 internal constant MIN_YIELD = 1_000e6;
     uint256 internal constant PRINCIPAL = 100_000e6;
     uint256 internal constant YIELD = 2_000e6;
+    uint256 internal constant VAULT_LIQUIDITY = 10_000_000e6;
 
     function setUp() public {
         signer = vm.addr(SIGNER_PK);
 
         usdc = new TestERC20();
         vaultFactory = new MockVaultFactory();
-        curatorRegistry = new MockCuratorRegistry();
-        rewards = new MockRewards(usdc);
-        whitelist = new MockWhitelist();
+        whitelist = new SettableWhitelist();
         vault = new MockVaultV2(usdc);
+        delegator = new MockDelegator(vault);
+        vault.setDelegator(address(delegator));
         request = new MockRequest(usdc);
 
-        adapter = new BridgeFacilitatorAdapter(
-            address(vault), address(rewards), address(whitelist), address(vaultFactory), address(curatorRegistry)
-        );
-        adapter.initialize(); // sets owner = address(this)
+        // Deploy through the real AdapterFactory proxy flow: the impl disables initializers in its
+        // constructor, so it can only be initialized behind a factory-created proxy.
+        adapterFactory = new AdapterFactory(address(this));
+        BridgeFacilitatorAdapter impl =
+            new BridgeFacilitatorAdapter(address(whitelist), address(vaultFactory), address(adapterFactory));
+        adapterFactory.whitelist(address(impl));
 
         vaultFactory.setEntity(address(vault), true);
+        adapter = BridgeFacilitatorAdapter(
+            adapterFactory.create(1, address(this), abi.encode(address(vault), bytes("")))
+        );
 
-        // Owner-side setup: adapter-wide limit + per-Request budget + offer signer.
-        adapter.setGlobalLimit(address(usdc), type(uint256).max);
-        whitelist.set(address(request), IWhitelist.WhitelistStatus.Whitelisted);
-        adapter.setRequestMetadata(address(request), MAX_PRINCIPAL, MIN_YIELD);
         adapter.setOfferSigner(signer);
+        whitelist.set(address(request), IWhitelist.WhitelistStatus.Whitelisted);
 
-        // Vault-side setup: per-adapter limit + idle liquidity.
-        vault.setAdapterLimit(address(adapter), type(uint256).max);
-        usdc.mint(address(vault), 10_000_000e6);
+        // Curator setup: per-adapter cap + the vault's idle liquidity the JIT pull draws from.
+        delegator.setLimit(address(adapter), type(uint256).max);
+        usdc.mint(address(vault), VAULT_LIQUIDITY);
     }
 
     /* ---------------------------------------------------------------------- */
-    /*                          onRequestConsumed                             */
+    /*                          onRequestConsumed (JIT)                       */
     /* ---------------------------------------------------------------------- */
 
-    function test_consume_happyPath() public {
+    function test_consume_happyPath_pullsPrincipalJustInTime() public {
         request.consume(address(adapter), PRINCIPAL, YIELD);
 
-        // Principal moved vault -> adapter -> request.
+        // Principal moved vault -> adapter (JIT) -> request; adapter holds no idle balance after.
         assertEq(usdc.balanceOf(address(request)), PRINCIPAL, "request holds principal");
-        assertEq(vault.adapterAllocated(address(adapter)), PRINCIPAL, "vault books principal to adapter");
-        assertEq(adapter.globalAllocated(address(usdc)), PRINCIPAL, "adapter tracks global allocated");
+        assertEq(usdc.balanceOf(address(vault)), VAULT_LIQUIDITY - PRINCIPAL, "vault funded the principal");
+        assertEq(usdc.balanceOf(address(adapter)), 0, "adapter holds no standing collateral");
+        assertEq(adapter.outstandingPrincipal(), PRINCIPAL, "outstanding principal tracked");
+        assertEq(adapter.totalAssets(), PRINCIPAL, "totalAssets = locked principal");
 
-        // Position registered.
         (uint128 p, uint128 yt, uint48 openedAt, bool redeemed) = adapter.positions(address(request));
         assertEq(p, uint128(PRINCIPAL));
         assertEq(yt, uint128(YIELD));
@@ -239,11 +237,18 @@ contract BridgeFacilitatorAdapterTest is Test {
         address[] memory active = adapter.activeRequests();
         assertEq(active.length, 1);
         assertEq(active[0], address(request));
+    }
 
-        // maxPrincipal decremented; minYield untouched.
-        (uint128 maxP, uint128 minY) = adapter.requestMetadata(address(request));
-        assertEq(maxP, MAX_PRINCIPAL - uint128(PRINCIPAL));
-        assertEq(minY, MIN_YIELD);
+    function test_consume_spendsIdleBalanceBeforePulling() public {
+        // Idle realized balance should be spent first; only the shortfall pulled from the vault.
+        uint256 idle = 30_000e6;
+        usdc.mint(address(adapter), idle);
+
+        request.consume(address(adapter), PRINCIPAL, YIELD);
+
+        assertEq(usdc.balanceOf(address(request)), PRINCIPAL, "request holds principal");
+        assertEq(usdc.balanceOf(address(vault)), VAULT_LIQUIDITY - (PRINCIPAL - idle), "vault funded only the shortfall");
+        assertEq(usdc.balanceOf(address(adapter)), 0, "idle balance fully spent");
     }
 
     function test_consume_revertsWhenNotAttested() public {
@@ -259,44 +264,26 @@ contract BridgeFacilitatorAdapterTest is Test {
         request.consume(address(adapter), PRINCIPAL, YIELD);
     }
 
-    function test_consume_revertsOnZeroPrincipal() public {
-        vm.expectRevert(BridgeFacilitatorAdapter.InsufficientPrincipalAllowance.selector);
-        request.consume(address(adapter), 0, YIELD);
-    }
-
-    function test_consume_revertsWhenPrincipalExceedsBudget() public {
-        vm.expectRevert(BridgeFacilitatorAdapter.InsufficientPrincipalAllowance.selector);
-        request.consume(address(adapter), uint256(MAX_PRINCIPAL) + 1, YIELD);
-    }
-
-    function test_consume_revertsWhenYieldBelowFloor() public {
-        vm.expectRevert(BridgeFacilitatorAdapter.YieldBelowFloor.selector);
-        request.consume(address(adapter), PRINCIPAL, MIN_YIELD - 1);
-    }
-
     function test_consume_revertsOnAssetMismatch() public {
         MockRequest other = new MockRequest(new TestERC20()); // different asset
         whitelist.set(address(other), IWhitelist.WhitelistStatus.Whitelisted);
-        adapter.setRequestMetadata(address(other), MAX_PRINCIPAL, 0);
         vm.expectRevert(BridgeFacilitatorAdapter.AssetMismatch.selector);
         other.consume(address(adapter), PRINCIPAL, YIELD);
     }
 
-    function test_consume_revertsWhenVaultCannotFund() public {
-        // Drain the vault's idle liquidity below the principal.
-        uint256 vaultBal = usdc.balanceOf(address(vault));
-        vm.prank(address(vault));
-        usdc.transfer(address(0xdead), vaultBal);
+    function test_consume_revertsWhenVaultLiquidityDry() public {
+        // Drain the vault's idle liquidity below the principal: the JIT pull comes up short.
+        vm.prank(address(delegator));
+        vault.pull(address(0xdead), VAULT_LIQUIDITY);
         vm.expectRevert(BridgeFacilitatorAdapter.InsufficientLiquidity.selector);
         request.consume(address(adapter), PRINCIPAL, YIELD);
     }
 
-    function test_consume_cumulativeBudgetDecrementsAcrossConsumes() public {
+    function test_consume_revertsWhenCapExceeded() public {
+        // Per-adapter cap below the principal: the JIT pull is clamped under the requested amount.
+        delegator.setLimit(address(adapter), PRINCIPAL - 1);
+        vm.expectRevert(BridgeFacilitatorAdapter.InsufficientLiquidity.selector);
         request.consume(address(adapter), PRINCIPAL, YIELD);
-        request.fundRedemption(0, 0); // reset request balance bookkeeping (not redeemed yet)
-        request.consume(address(adapter), PRINCIPAL, YIELD);
-        (uint128 maxP,) = adapter.requestMetadata(address(request));
-        assertEq(maxP, MAX_PRINCIPAL - 2 * uint128(PRINCIPAL));
     }
 
     /* ---------------------------------------------------------------------- */
@@ -304,7 +291,7 @@ contract BridgeFacilitatorAdapterTest is Test {
     /* ---------------------------------------------------------------------- */
 
     function test_allocatable_zeroOutsideConsume() public view {
-        assertEq(adapter.allocatable(address(vault)), 0, "no standing allocation outside consume");
+        assertEq(adapter.allocatable(), 0, "no standing allocation outside a consume");
     }
 
     /* ---------------------------------------------------------------------- */
@@ -343,6 +330,7 @@ contract BridgeFacilitatorAdapterTest is Test {
         adapter.redeem(reqs);
 
         assertEq(adapter.realizedPrincipal(), PRINCIPAL, "principal realized");
+        assertEq(adapter.outstandingPrincipal(), 0, "outstanding cleared");
         assertEq(usdc.balanceOf(address(adapter)), PRINCIPAL + YIELD, "adapter holds principal + yield");
         assertEq(adapter.activeRequests().length, 0, "removed from active set");
         (,,, bool redeemed) = adapter.positions(address(request));
@@ -351,7 +339,7 @@ contract BridgeFacilitatorAdapterTest is Test {
 
     function test_redeem_lossScenarioRealizesLessThanPrincipal() public {
         _openPosition();
-        uint256 recovered = PRINCIPAL - 10_000e6; // default: less than fronted principal
+        uint256 recovered = PRINCIPAL - 10_000e6; // less than fronted principal
         request.fundRedemption(recovered, 0);
         request.setCanWithdraw(true);
 
@@ -360,14 +348,15 @@ contract BridgeFacilitatorAdapterTest is Test {
         adapter.redeem(reqs);
 
         assertEq(adapter.realizedPrincipal(), recovered, "realized principal reflects the loss");
+        assertEq(adapter.outstandingPrincipal(), 0, "offer-time principal retired from outstanding");
         assertEq(usdc.balanceOf(address(adapter)), recovered);
     }
 
     /* ---------------------------------------------------------------------- */
-    /*                       deallocatable / deallocate                       */
+    /*                              deallocate                                */
     /* ---------------------------------------------------------------------- */
 
-    function test_deallocate_returnsRealizedPrincipalToVault() public {
+    function test_deallocate_recallsRealizedBalanceToVault() public {
         _openPosition();
         request.fundRedemption(PRINCIPAL, YIELD);
         usdc.mint(address(request), YIELD);
@@ -375,75 +364,22 @@ contract BridgeFacilitatorAdapterTest is Test {
         address[] memory reqs = new address[](1);
         reqs[0] = address(request);
         adapter.redeem(reqs);
-
-        assertEq(adapter.deallocatable(address(vault)), PRINCIPAL);
 
         uint256 vaultBefore = usdc.balanceOf(address(vault));
-        uint256 pulled = vault.deallocateAdapter(address(adapter), PRINCIPAL);
+        uint256 pulled = delegator.deallocate(address(adapter), PRINCIPAL);
 
-        assertEq(pulled, PRINCIPAL);
-        assertEq(usdc.balanceOf(address(vault)) - vaultBefore, PRINCIPAL, "vault recovered principal");
+        // Base `deallocate` recalls the entire free balance (principal + yield); override floors `realizedPrincipal` at 0.
+        assertEq(pulled, PRINCIPAL + YIELD, "delegator recalled the full realized balance");
+        assertEq(usdc.balanceOf(address(vault)) - vaultBefore, PRINCIPAL + YIELD, "vault recovered principal + yield");
         assertEq(adapter.realizedPrincipal(), 0);
-        assertEq(adapter.globalAllocated(address(usdc)), 0);
-        assertEq(usdc.balanceOf(address(adapter)), YIELD, "only yield remains in adapter");
+        assertEq(usdc.balanceOf(address(adapter)), 0, "nothing left idle in the adapter");
     }
 
-    function test_deallocatable_zeroWhileLoanOutstanding() public {
-        _openPosition(); // consumed but not redeemed
-        assertEq(adapter.deallocatable(address(vault)), 0, "locked principal is not recallable");
-    }
-
-    function test_foreignVaultCannotDrainOrSkim() public {
-        // Realize some principal so there's something a foreign vault might try to take.
+    function test_deallocate_onlyDelegator() public {
         _openPosition();
-        request.fundRedemption(PRINCIPAL, YIELD);
-        usdc.mint(address(request), YIELD);
-        request.setCanWithdraw(true);
-        address[] memory reqs = new address[](1);
-        reqs[0] = address(request);
-        adapter.redeem(reqs);
-        assertEq(adapter.realizedPrincipal(), PRINCIPAL);
-
-        // A different, legitimately-registered Symbiotic vault adds this adapter and attacks.
-        address foreignVault = makeAddr("foreignVault");
-        vaultFactory.setEntity(foreignVault, true);
-
-        // Views expose nothing to the foreign vault.
-        assertEq(adapter.deallocatable(foreignVault), 0);
-        assertEq(adapter.skimmable(foreignVault), 0);
-
-        // Direct deallocate / skim from the foreign vault are rejected (funds stay put).
-        vm.prank(foreignVault);
+        vm.prank(makeAddr("notDelegator"));
         vm.expectRevert(IAdapter.NotVault.selector);
         adapter.deallocate(PRINCIPAL);
-
-        vm.expectRevert(IAdapter.NotVault.selector);
-        adapter.skim(foreignVault);
-
-        assertEq(adapter.realizedPrincipal(), PRINCIPAL, "principal untouched");
-        assertEq(usdc.balanceOf(address(adapter)), PRINCIPAL + YIELD, "balance untouched");
-    }
-
-    /* ---------------------------------------------------------------------- */
-    /*                            skimmable / skim                            */
-    /* ---------------------------------------------------------------------- */
-
-    function test_skim_distributesYieldToRewards() public {
-        _openPosition();
-        request.fundRedemption(PRINCIPAL, YIELD);
-        usdc.mint(address(request), YIELD);
-        request.setCanWithdraw(true);
-        address[] memory reqs = new address[](1);
-        reqs[0] = address(request);
-        adapter.redeem(reqs);
-
-        assertEq(adapter.skimmable(address(vault)), YIELD, "yield above realized principal is skimmable");
-
-        adapter.skim(address(vault));
-
-        assertEq(rewards.totalDistributed(), YIELD, "yield distributed to rewards");
-        assertEq(adapter.skimmable(address(vault)), 0);
-        assertEq(usdc.balanceOf(address(adapter)), PRINCIPAL, "only recallable principal remains");
     }
 
     /* ---------------------------------------------------------------------- */
@@ -475,25 +411,6 @@ contract BridgeFacilitatorAdapterTest is Test {
     /* ---------------------------------------------------------------------- */
     /*                         owner-gated config                             */
     /* ---------------------------------------------------------------------- */
-
-    function test_setRequestMetadata_onlyOwner() public {
-        vm.prank(makeAddr("notOwner"));
-        vm.expectRevert();
-        adapter.setRequestMetadata(address(request), 1, 0);
-    }
-
-    function test_setRequestMetadata_revertsAuthorizingUnattested() public {
-        MockRequest fresh = new MockRequest(usdc); // not whitelisted
-        vm.expectRevert(BridgeFacilitatorAdapter.NotAttested.selector);
-        adapter.setRequestMetadata(address(fresh), 1, 0);
-    }
-
-    function test_setRequestMetadata_zeroingAllowedWithoutAttestation() public {
-        whitelist.set(address(request), IWhitelist.WhitelistStatus.NotWhitelisted);
-        adapter.setRequestMetadata(address(request), 0, 0); // de-authorization is a fail-safe
-        (uint128 maxP,) = adapter.requestMetadata(address(request));
-        assertEq(maxP, 0);
-    }
 
     function test_setOfferSigner_onlyOwner() public {
         vm.prank(makeAddr("notOwner"));

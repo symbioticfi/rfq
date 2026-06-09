@@ -2,17 +2,16 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
+import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams} from "./interfaces/IMorpho.sol";
 import {IOperationCallback} from "./interfaces/IOperationCallback.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import {IInstantRedemptionAdapter} from "@symbioticfi/core/src/interfaces/vault/adapters/IInstantRedemptionAdapter.sol";
-
 /// @title SymbioticOevSolver
 /// @notice OEV liquidation callback that routes seized RWA collateral through a Symbiotic
-///         InstantRedemptionAdapter vault to source the loan token in-flight, avoiding a flash loan.
+///         LiquidLane adapter to source the loan token in-flight, avoiding a flash loan.
 /// @dev    Designed for the Morpho Blue liquidation callback flow described in
 ///         https://github.com/redstone-finance/redstone-evm-examples/blob/main/oev/solver-example/Solver.sol
 contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
@@ -32,8 +31,8 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
     address public immutable EXECUTOR;
     /// @notice Morpho Blue lending market.
     address public immutable MORPHO;
-    /// @notice Symbiotic InstantRedemptionAdapter used as the RWA exit venue.
-    address public immutable IR_ADAPTER;
+    /// @notice Symbiotic LiquidLane adapter used as the RWA exit venue.
+    address public immutable LIQUID_LANE_ADAPTER;
 
     /* STATE */
 
@@ -52,14 +51,12 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
     /// @param borrower        Borrower being liquidated.
     /// @param seizedAssets    Collateral to seize. Set to zero if `repaidShares` is used instead.
     /// @param repaidShares    Borrow shares to repay. Set to zero if `seizedAssets` is used instead.
-    /// @param symbioticVault  VaultV2 that will release loan-token collateral against the seized RWA.
     /// @param swapAmountOut   Loan-token amount requested from the adapter (must respect `getMaxRate`).
     struct LiquidationLeg {
         Id marketId;
         address borrower;
         uint256 seizedAssets;
         uint256 repaidShares;
-        address symbioticVault;
         uint256 swapAmountOut;
     }
 
@@ -84,10 +81,10 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
 
     /* CONSTRUCTOR */
 
-    constructor(address executor, address morpho, address irAdapter, address initialOwner) {
+    constructor(address executor, address morpho, address liquidLaneAdapter, address initialOwner) {
         EXECUTOR = executor;
         MORPHO = morpho;
-        IR_ADAPTER = irAdapter;
+        LIQUID_LANE_ADAPTER = liquidLaneAdapter;
         owner = initialOwner;
         emit OwnerUpdated(address(0), initialOwner);
     }
@@ -118,21 +115,20 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
     /// @inheritdoc IMorphoLiquidateCallback
     /// @dev Invoked by Morpho mid-`liquidate` after the seized collateral lands in this contract and
     ///      before Morpho pulls `repaidAssets` of the loan token back. We use this window to convert the
-    ///      seized RWA into the loan token via the Symbiotic IR adapter.
+    ///      seized RWA into the loan token via the Symbiotic LiquidLane adapter.
     function onMorphoLiquidate(uint256 repaidAssets, bytes calldata data) external {
         if (msg.sender != MORPHO) revert NotMorpho();
         CallbackContext memory ctx = abi.decode(data, (CallbackContext));
 
         uint256 seizedBalance = IERC20(ctx.collateralToken).balanceOf(address(this));
 
-        // Push the seized RWA to the IR adapter, which expects the token to already be in place.
-        IERC20(ctx.collateralToken).safeTransfer(IR_ADAPTER, seizedBalance);
+        // Push the seized RWA to the LiquidLane adapter, which expects the token to already be in place.
+        IERC20(ctx.collateralToken).safeTransfer(LIQUID_LANE_ADAPTER, seizedBalance);
 
         // Pull vault collateral (the loan token) out of the adapter. amountOut must respect getMaxRate.
-        IInstantRedemptionAdapter(IR_ADAPTER).swap(
-            IInstantRedemptionAdapter.Swap({
+        ILiquidLaneAdapter(LIQUID_LANE_ADAPTER).swap(
+            ILiquidLaneAdapter.Swap({
                 recipient: address(this),
-                vault: ctx.leg.symbioticVault,
                 tokenIn: ctx.collateralToken,
                 amountIn: seizedBalance,
                 amountOut: ctx.leg.swapAmountOut
