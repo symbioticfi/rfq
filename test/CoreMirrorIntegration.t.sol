@@ -6,158 +6,128 @@ import {Executor} from "../src/Executor.sol";
 import {Reactor} from "../src/Reactor.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
-    IInstantRedemptionAdapter as LocalInstantRedemptionAdapter
-} from "../src/interfaces/IInstantRedemptionAdapter.sol";
+    DISCOUNT_PRECISION,
+    DISCOUNT_SWAP_TYPEHASH,
+    DISCOUNT_TYPEHASH,
+    ILiquidLaneAdapter,
+    SIGNED_SWAP_TYPEHASH
+} from "../src/interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import {
-    DISCOUNT_PRECISION as CORE_DISCOUNT_PRECISION,
-    DISCOUNT_SWAP_TYPEHASH as CORE_DISCOUNT_SWAP_TYPEHASH,
-    DISCOUNT_TYPEHASH as CORE_DISCOUNT_TYPEHASH,
-    IInstantRedemptionAdapter as CoreInstantRedemptionAdapter,
-    SIGNED_SWAP_TYPEHASH as CORE_SIGNED_SWAP_TYPEHASH
-} from "@symbioticfi/core/src/interfaces/vault/adapters/IInstantRedemptionAdapter.sol";
-
 import {Test} from "forge-std/Test.sol";
 
-contract CoreMirrorIntegrationTest is Test {
+contract LiquidLaneIntegrationTest is Test {
     bytes32 internal constant DOMAIN_TYPEHASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
     uint256 internal constant PROTOCOL_PRIVATE_KEY = 0xA11CE;
     uint256 internal constant SWAPPER_PRIVATE_KEY = 0xBEEF;
 
     address internal filler = makeAddr("filler");
+    address internal primaryAccount = makeAddr("primaryAccount");
     address internal protocol = vm.addr(PROTOCOL_PRIVATE_KEY);
+    address internal secondaryAccount = makeAddr("secondaryAccount");
     address internal swapper = vm.addr(SWAPPER_PRIVATE_KEY);
-    address internal vault0 = makeAddr("vault0");
-    address internal vault1 = makeAddr("vault1");
-    address internal vault0Account = makeAddr("vault0Account");
-    address internal vault1Account = makeAddr("vault1Account");
 
-    CoreMirrorAdapterMock internal adapter;
     IntegrationAdapterFactory internal adapterFactory;
-    IntegrationERC20 internal outputToken;
-    IntegrationERC20 internal rwa;
+    LiquidLaneAdapterMock internal adapter;
     Executor internal executor;
+    IntegrationERC20 internal outputToken;
     Reactor internal reactor;
+    IntegrationERC20 internal rwa;
+    LiquidLaneAdapterMock internal secondaryAdapter;
 
     function setUp() public {
-        adapter = new CoreMirrorAdapterMock();
+        adapter = new LiquidLaneAdapterMock();
+        secondaryAdapter = new LiquidLaneAdapterMock();
         adapterFactory = new IntegrationAdapterFactory();
         adapterFactory.setEntity(address(adapter), true);
+        adapterFactory.setEntity(address(secondaryAdapter), true);
         reactor = new Reactor(address(adapterFactory));
         executor = new Executor(address(reactor), address(this), _callers(filler));
 
         rwa = new IntegrationERC20("RWA", "RWA");
         outputToken = new IntegrationERC20("USD", "USD");
 
-        adapter.setAccount(vault0, address(rwa), vault0Account);
-        adapter.setAccount(vault1, address(rwa), vault1Account);
+        adapter.setAccount(address(rwa), primaryAccount);
+        secondaryAdapter.setAccount(address(rwa), secondaryAccount);
 
         rwa.mint(swapper, 100 ether);
         vm.prank(swapper);
         rwa.approve(address(reactor), type(uint256).max);
     }
 
-    function testCoreMirrorConstantsMatchExpectedAdapterSchema() public pure {
-        assertEq(CORE_DISCOUNT_PRECISION, 1_000_000);
+    function testLiquidLaneConstantsMatchMirrorSchema() public pure {
+        assertEq(DISCOUNT_PRECISION, 1_000_000);
         assertEq(
-            CORE_SIGNED_SWAP_TYPEHASH,
+            SIGNED_SWAP_TYPEHASH,
             keccak256(
-                "SignedSwap(address recipient,address vault,address tokenIn,uint256 amountIn,uint256 amountOut,address caller,address signer,uint256 nonce,uint256 deadline)"
+                "SignedSwap(address recipient,address tokenIn,uint256 amountIn,uint256 amountOut,address caller,address signer,uint256 nonce,uint48 deadline)"
             )
         );
         assertEq(
-            CORE_DISCOUNT_TYPEHASH,
+            DISCOUNT_TYPEHASH,
             keccak256(
-                "Discount(address vault,address tokenToRedeem,uint256 discount,address signer,address protocol,uint256 nonce,uint48 deadline)"
+                "Discount(address tokenToRedeem,uint256 discount,address signer,address protocol,uint256 nonce,uint48 deadline)"
             )
         );
         assertEq(
-            CORE_DISCOUNT_SWAP_TYPEHASH,
+            DISCOUNT_SWAP_TYPEHASH,
             keccak256(
                 "DiscountSwap(Discount discount,bytes signerSignature,uint48 protocolDeadline)"
-                "Discount(address vault,address tokenToRedeem,uint256 discount,address signer,address protocol,uint256 nonce,uint48 deadline)"
+                "Discount(address tokenToRedeem,uint256 discount,address signer,address protocol,uint256 nonce,uint48 deadline)"
             )
         );
     }
 
-    function testLocalAndCoreMirrorStructEncodingsMatch() public view {
-        LocalInstantRedemptionAdapter.Swap memory localSwap = _localSwap(vault0, 11 ether, 10 ether);
-        CoreInstantRedemptionAdapter.Swap memory coreSwap = CoreInstantRedemptionAdapter.Swap({
-            recipient: localSwap.recipient,
-            vault: localSwap.vault,
-            tokenIn: localSwap.tokenIn,
-            amountIn: localSwap.amountIn,
-            amountOut: localSwap.amountOut
-        });
-
-        LocalInstantRedemptionAdapter.SignedSwap memory localSignedSwap = LocalInstantRedemptionAdapter.SignedSwap({
+    function testLocalStructsExposeLiquidLaneFields() public view {
+        ILiquidLaneAdapter.Swap memory swap = _swap(11 ether, 10 ether);
+        ILiquidLaneAdapter.SignedSwap memory signedSwap = ILiquidLaneAdapter.SignedSwap({
             recipient: filler,
-            vault: vault0,
             tokenIn: address(rwa),
             amountIn: 11 ether,
             amountOut: 10 ether,
             caller: address(executor),
             signer: protocol,
             nonce: 77,
-            deadline: block.timestamp + 1 days
+            deadline: uint48(block.timestamp + 1 days)
         });
-        CoreInstantRedemptionAdapter.SignedSwap memory coreSignedSwap = CoreInstantRedemptionAdapter.SignedSwap({
-            recipient: localSignedSwap.recipient,
-            vault: localSignedSwap.vault,
-            tokenIn: localSignedSwap.tokenIn,
-            amountIn: localSignedSwap.amountIn,
-            amountOut: localSignedSwap.amountOut,
-            caller: localSignedSwap.caller,
-            signer: localSignedSwap.signer,
-            nonce: localSignedSwap.nonce,
-            deadline: localSignedSwap.deadline
+        ILiquidLaneAdapter.Discount memory discount = _discount();
+        ILiquidLaneAdapter.DiscountSwap memory discountSwap = ILiquidLaneAdapter.DiscountSwap({
+            discount: discount, signerSignature: hex"1234", protocolDeadline: uint48(block.timestamp + 90)
         });
 
-        LocalInstantRedemptionAdapter.Discount memory localDiscount = _localDiscount(vault1);
-        CoreInstantRedemptionAdapter.Discount memory coreDiscount = CoreInstantRedemptionAdapter.Discount({
-            vault: localDiscount.vault,
-            tokenToRedeem: localDiscount.tokenToRedeem,
-            discount: localDiscount.discount,
-            signer: localDiscount.signer,
-            protocol: localDiscount.protocol,
-            nonce: localDiscount.nonce,
-            deadline: localDiscount.deadline
-        });
-
-        LocalInstantRedemptionAdapter.DiscountSwap memory localDiscountSwap = LocalInstantRedemptionAdapter.DiscountSwap({
-            discount: localDiscount, signerSignature: hex"1234", protocolDeadline: uint48(block.timestamp + 90)
-        });
-        CoreInstantRedemptionAdapter.DiscountSwap memory coreDiscountSwap = CoreInstantRedemptionAdapter.DiscountSwap({
-            discount: coreDiscount,
-            signerSignature: localDiscountSwap.signerSignature,
-            protocolDeadline: localDiscountSwap.protocolDeadline
-        });
-
-        assertEq(keccak256(abi.encode(localSwap)), keccak256(abi.encode(coreSwap)));
-        assertEq(keccak256(abi.encode(localSignedSwap)), keccak256(abi.encode(coreSignedSwap)));
-        assertEq(keccak256(abi.encode(localDiscount)), keccak256(abi.encode(coreDiscount)));
-        assertEq(keccak256(abi.encode(localDiscountSwap)), keccak256(abi.encode(coreDiscountSwap)));
+        assertEq(swap.recipient, filler);
+        assertEq(swap.tokenIn, address(rwa));
+        assertEq(swap.amountIn, 11 ether);
+        assertEq(swap.amountOut, 10 ether);
+        assertEq(signedSwap.caller, address(executor));
+        assertEq(signedSwap.signer, protocol);
+        assertEq(signedSwap.deadline, uint48(block.timestamp + 1 days));
+        assertEq(discount.tokenToRedeem, address(rwa));
+        assertEq(discount.signer, protocol);
+        assertEq(discount.protocol, protocol);
+        assertEq(discountSwap.discount.nonce, 2);
+        assertEq(discountSwap.signerSignature, hex"1234");
+        assertEq(discountSwap.protocolDeadline, uint48(block.timestamp + 90));
     }
 
-    function testCoreMirrorAdapterHandlesDirectSwapFill() public {
+    function testLiquidLaneAdapterHandlesDirectSwapFill() public {
         outputToken.mint(address(executor), 5 ether);
 
         IReactor.Output[] memory outputs = new IReactor.Output[](1);
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+        IReactor.SwapInput memory swap = _swapInput(address(adapter), 5 ether, 5 ether);
         IReactor.Order memory order = _order(outputs, 5 ether);
 
         vm.prank(filler);
         executor.fill(order, _signOrder(order), swap, abi.encode(calls));
 
-        assertEq(rwa.balanceOf(vault0Account), 5 ether);
+        assertEq(rwa.balanceOf(primaryAccount), 5 ether);
         assertEq(outputToken.balanceOf(swapper), 5 ether);
         assertEq(adapter.swapCount(), 1);
         assertEq(adapter.discountSwapCount(), 0);
@@ -165,7 +135,7 @@ contract CoreMirrorIntegrationTest is Test {
         assertEq(adapter.lastAmountOut(), 5 ether);
     }
 
-    function testCoreMirrorAdapterHandlesMixedDirectAndDiscountSwapFill() public {
+    function testLiquidLaneAdapterHandlesMixedDirectAndDiscountSwapFill() public {
         outputToken.mint(address(executor), 10 ether);
 
         IReactor.Output[] memory outputs = new IReactor.Output[](1);
@@ -173,43 +143,42 @@ contract CoreMirrorIntegrationTest is Test {
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
         IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](1);
-        swapInputs[0] = _swapInput(vault0, 4 ether, 4 ether);
+        swapInputs[0] = _swapInput(address(adapter), 4 ether, 4 ether);
 
         IReactor.DiscountSwapInput[] memory discountSwapInputs = new IReactor.DiscountSwapInput[](1);
-        discountSwapInputs[0] = _discountSwapInput(vault1, 6 ether, 6 ether);
+        discountSwapInputs[0] = _discountSwapInput(address(secondaryAdapter), 6 ether);
 
         IReactor.Order memory order = _order(outputs, 10 ether);
 
         vm.prank(filler);
         executor.fill(order, _signOrder(order), swapInputs, discountSwapInputs, abi.encode(calls));
 
-        assertEq(rwa.balanceOf(vault0Account), 4 ether);
-        assertEq(rwa.balanceOf(vault1Account), 6 ether);
+        assertEq(rwa.balanceOf(primaryAccount), 4 ether);
+        assertEq(rwa.balanceOf(secondaryAccount), 6 ether);
         assertEq(outputToken.balanceOf(swapper), 10 ether);
         assertEq(adapter.swapCount(), 1);
-        assertEq(adapter.discountSwapCount(), 1);
-        assertEq(adapter.lastRecipient(), filler);
-        assertEq(adapter.lastAmountOut(), 6 ether);
+        assertEq(secondaryAdapter.discountSwapCount(), 1);
+        assertEq(secondaryAdapter.lastRecipient(), filler);
+        assertEq(secondaryAdapter.lastAmountOut(), 6 ether);
     }
 
-    function testCoreMirrorAdapterHandlesLocalSignedSwapSelector() public {
+    function testLiquidLaneAdapterHandlesLocalSignedSwapSelector() public {
         rwa.mint(address(adapter), 3 ether);
 
-        LocalInstantRedemptionAdapter.SignedSwap memory signedSwap = LocalInstantRedemptionAdapter.SignedSwap({
+        ILiquidLaneAdapter.SignedSwap memory signedSwap = ILiquidLaneAdapter.SignedSwap({
             recipient: filler,
-            vault: vault0,
             tokenIn: address(rwa),
             amountIn: 3 ether,
             amountOut: 3 ether,
             caller: address(executor),
             signer: protocol,
             nonce: 101,
-            deadline: block.timestamp + 1 days
+            deadline: uint48(block.timestamp + 1 days)
         });
 
-        LocalInstantRedemptionAdapter(address(adapter)).swap(signedSwap, hex"c0de");
+        ILiquidLaneAdapter(address(adapter)).swap(signedSwap, hex"c0de");
 
-        assertEq(rwa.balanceOf(vault0Account), 3 ether);
+        assertEq(rwa.balanceOf(primaryAccount), 3 ether);
         assertEq(adapter.signedSwapCount(), 1);
         assertEq(adapter.lastRecipient(), filler);
         assertEq(adapter.lastAmountOut(), 3 ether);
@@ -305,27 +274,23 @@ contract CoreMirrorIntegrationTest is Test {
         );
     }
 
-    function _localSwap(address vault, uint256 amountIn, uint256 amountOut)
-        internal
-        view
-        returns (LocalInstantRedemptionAdapter.Swap memory)
-    {
-        return LocalInstantRedemptionAdapter.Swap({
-            recipient: filler, vault: vault, tokenIn: address(rwa), amountIn: amountIn, amountOut: amountOut
-        });
+    function _swap(uint256 amountIn, uint256 amountOut) internal view returns (ILiquidLaneAdapter.Swap memory) {
+        return
+            ILiquidLaneAdapter.Swap({
+                recipient: filler, tokenIn: address(rwa), amountIn: amountIn, amountOut: amountOut
+            });
     }
 
-    function _swapInput(address vault, uint256 amountIn, uint256 amountOut)
+    function _swapInput(address adapter_, uint256 amountIn, uint256 amountOut)
         internal
         view
         returns (IReactor.SwapInput memory)
     {
-        return IReactor.SwapInput({adapter: address(adapter), swap: _localSwap(vault, amountIn, amountOut)});
+        return IReactor.SwapInput({adapter: adapter_, swap: _swap(amountIn, amountOut)});
     }
 
-    function _localDiscount(address vault) internal view returns (LocalInstantRedemptionAdapter.Discount memory) {
-        return LocalInstantRedemptionAdapter.Discount({
-            vault: vault,
+    function _discount() internal view returns (ILiquidLaneAdapter.Discount memory) {
+        return ILiquidLaneAdapter.Discount({
             tokenToRedeem: address(rwa),
             discount: 50_000,
             signer: protocol,
@@ -335,22 +300,19 @@ contract CoreMirrorIntegrationTest is Test {
         });
     }
 
-    function _discountSwapInput(address vault, uint256 amountIn, uint256 amountOut)
+    function _discountSwapInput(address adapter_, uint256 amountIn)
         internal
         view
         returns (IReactor.DiscountSwapInput memory)
     {
         return IReactor.DiscountSwapInput({
-            adapter: address(adapter),
-            discountSwap: LocalInstantRedemptionAdapter.DiscountSwap({
-                discount: _localDiscount(vault),
-                signerSignature: hex"1234",
-                protocolDeadline: uint48(block.timestamp + 90)
+            adapter: adapter_,
+            discountSwap: ILiquidLaneAdapter.DiscountSwap({
+                discount: _discount(), signerSignature: hex"1234", protocolDeadline: uint48(block.timestamp + 90)
             }),
             protocolSignature: hex"5678",
             recipient: filler,
-            amountIn: amountIn,
-            amountOut: amountOut
+            amountIn: amountIn
         });
     }
 }
@@ -363,51 +325,47 @@ contract IntegrationAdapterFactory {
     }
 }
 
-contract CoreMirrorAdapterMock {
-    mapping(address vault => mapping(address token => address account)) internal _accounts;
-    uint256 public swapCount;
-    uint256 public signedSwapCount;
+contract LiquidLaneAdapterMock is ILiquidLaneAdapter {
+    mapping(address token => address account) internal _accounts;
     uint256 public discountSwapCount;
+    uint256 public signedSwapCount;
+    uint256 public swapCount;
     address public lastRecipient;
     uint256 public lastAmountOut;
 
-    function setAccount(address vault, address token, address account) public {
-        _accounts[vault][token] = account;
+    function setAccount(address token, address account) public {
+        _accounts[token] = account;
     }
 
-    function getAccount(address vault, address token) public view returns (address) {
-        return _accounts[vault][token];
-    }
-
-    function swap(CoreInstantRedemptionAdapter.Swap calldata swap_) public {
-        _transferToAccount(swap_.vault, swap_.tokenIn, swap_.amountIn);
+    function swap(ILiquidLaneAdapter.Swap calldata swap_) public {
+        _transferToAccount(swap_.tokenIn, swap_.amountIn);
         lastRecipient = swap_.recipient;
         lastAmountOut = swap_.amountOut;
         ++swapCount;
     }
 
-    function swap(CoreInstantRedemptionAdapter.SignedSwap calldata signedSwap, bytes calldata) public {
-        _transferToAccount(signedSwap.vault, signedSwap.tokenIn, signedSwap.amountIn);
+    function swap(ILiquidLaneAdapter.SignedSwap calldata signedSwap, bytes calldata) public {
+        _transferToAccount(signedSwap.tokenIn, signedSwap.amountIn);
         lastRecipient = signedSwap.recipient;
         lastAmountOut = signedSwap.amountOut;
         ++signedSwapCount;
     }
 
     function swap(
-        CoreInstantRedemptionAdapter.DiscountSwap calldata discountSwap,
+        ILiquidLaneAdapter.DiscountSwap calldata discountSwap,
         bytes calldata,
         address recipient,
-        uint256 amountIn,
-        uint256 amountOut
-    ) public {
-        _transferToAccount(discountSwap.discount.vault, discountSwap.discount.tokenToRedeem, amountIn);
+        uint256 amountIn
+    ) public returns (uint256 amountOut) {
+        _transferToAccount(discountSwap.discount.tokenToRedeem, amountIn);
         lastRecipient = recipient;
-        lastAmountOut = amountOut;
+        lastAmountOut = amountIn;
         ++discountSwapCount;
+        return amountIn;
     }
 
-    function _transferToAccount(address vault, address token, uint256 amount) internal {
-        address account = _accounts[vault][token];
+    function _transferToAccount(address token, uint256 amount) internal {
+        address account = _accounts[token];
         require(account != address(0), "missing account");
         require(IERC20(token).balanceOf(address(this)) >= amount, "missing rwa");
         IERC20(token).transfer(account, amount);

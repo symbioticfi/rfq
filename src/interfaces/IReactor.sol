@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity ^0.8.0;
 
-import {IInstantRedemptionAdapter} from "./IInstantRedemptionAdapter.sol";
+import {ILiquidLaneAdapter} from "./ILiquidLaneAdapter.sol";
 
 /* Sentinel address used to represent native asset outputs. */
 address constant NATIVE = 0x0000000000000000000000000000000000000000;
@@ -121,7 +121,7 @@ interface IReactor {
      */
     struct SwapInput {
         address adapter;
-        IInstantRedemptionAdapter.Swap swap;
+        ILiquidLaneAdapter.Swap swap;
     }
 
     /**
@@ -130,16 +130,14 @@ interface IReactor {
      * @param discountSwap Protocol-authorized reusable discount payload.
      * @param protocolSignature Protocol signature over `discountSwap`.
      * @param recipient Recipient of the collateral output.
-     * @param amountIn Input RWA amount assigned to the vault leg.
-     * @param amountOut Collateral amount requested from the adapter.
+     * @param amountIn Input RWA amount assigned to the adapter leg.
      */
     struct DiscountSwapInput {
         address adapter;
-        IInstantRedemptionAdapter.DiscountSwap discountSwap;
+        ILiquidLaneAdapter.DiscountSwap discountSwap;
         bytes protocolSignature;
         address recipient;
         uint256 amountIn;
-        uint256 amountOut;
     }
 
     /* EVENTS */

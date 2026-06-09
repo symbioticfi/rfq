@@ -5,7 +5,7 @@ pragma solidity 0.8.28;
 import {Executor} from "../src/Executor.sol";
 import {Reactor} from "../src/Reactor.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
-import {IInstantRedemptionAdapter} from "../src/interfaces/IInstantRedemptionAdapter.sol";
+import {ILiquidLaneAdapter} from "../src/interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -151,9 +151,7 @@ contract ReactorMainnetForkTest is Test {
     function _swap(uint256 amountIn) internal view returns (IReactor.SwapInput memory) {
         return IReactor.SwapInput({
             adapter: address(adapter),
-            swap: IInstantRedemptionAdapter.Swap({
-                recipient: filler, vault: vault, tokenIn: DAI, amountIn: amountIn, amountOut: USDC_AMOUNT
-            })
+            swap: ILiquidLaneAdapter.Swap({recipient: filler, tokenIn: DAI, amountIn: amountIn, amountOut: USDC_AMOUNT})
         });
     }
 
@@ -237,37 +235,37 @@ contract ForkAdapterFactory {
     }
 }
 
-contract ForkMockAdapter is IInstantRedemptionAdapter {
-    mapping(address vault => mapping(address token => address account)) internal _accounts;
+contract ForkMockAdapter is ILiquidLaneAdapter {
+    mapping(address token => address account) internal _accounts;
 
     function setAccount(address vault, address token, address account) public {
-        _accounts[vault][token] = account;
+        vault;
+        _accounts[token] = account;
     }
 
     function getAccount(address vault, address token) public view returns (address account) {
-        return _accounts[vault][token];
+        vault;
+        return _accounts[token];
     }
 
-    function swap(IInstantRedemptionAdapter.Swap calldata swap_) public {
-        _sendToAccount(swap_.vault, swap_.tokenIn, swap_.amountIn);
+    function swap(ILiquidLaneAdapter.Swap calldata swap_) public {
+        _sendToAccount(swap_.tokenIn, swap_.amountIn);
     }
 
-    function swap(IInstantRedemptionAdapter.SignedSwap calldata signedSwap, bytes calldata) public {
-        _sendToAccount(signedSwap.vault, signedSwap.tokenIn, signedSwap.amountIn);
+    function swap(ILiquidLaneAdapter.SignedSwap calldata signedSwap, bytes calldata) public {
+        _sendToAccount(signedSwap.tokenIn, signedSwap.amountIn);
     }
 
-    function swap(
-        IInstantRedemptionAdapter.DiscountSwap calldata discountSwap,
-        bytes calldata,
-        address,
-        uint256 amountIn,
-        uint256
-    ) public {
-        _sendToAccount(discountSwap.discount.vault, discountSwap.discount.tokenToRedeem, amountIn);
+    function swap(ILiquidLaneAdapter.DiscountSwap calldata discountSwap, bytes calldata, address, uint256 amountIn)
+        public
+        returns (uint256 amountOut)
+    {
+        _sendToAccount(discountSwap.discount.tokenToRedeem, amountIn);
+        return amountIn;
     }
 
-    function _sendToAccount(address vault, address token, uint256 amount) internal {
-        address account = _accounts[vault][token];
+    function _sendToAccount(address token, uint256 amount) internal {
+        address account = _accounts[token];
         require(account != address(0) && IERC20(token).balanceOf(address(this)) >= amount, "missing rwa");
         IERC20(token).transfer(account, amount);
     }

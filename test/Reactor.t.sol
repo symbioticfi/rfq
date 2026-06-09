@@ -5,7 +5,7 @@ pragma solidity 0.8.28;
 import {Executor} from "../src/Executor.sol";
 import {Reactor} from "../src/Reactor.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
-import {IInstantRedemptionAdapter} from "../src/interfaces/IInstantRedemptionAdapter.sol";
+import {ILiquidLaneAdapter} from "../src/interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, NATIVE, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
@@ -53,8 +53,6 @@ contract ReactorTest is Test {
         outputToken = new MockERC20("USD", "USD");
 
         adapter.setAccount(vault0, address(rwa), vault0Account);
-        adapter.setAccount(vault1, address(rwa), vault1Account);
-        secondaryAdapter.setAccount(vault0, address(rwa), vault0Account);
         secondaryAdapter.setAccount(vault1, address(rwa), vault1Account);
 
         rwa.mint(swapper, 100 ether);
@@ -97,7 +95,7 @@ contract ReactorTest is Test {
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
         IReactor.SwapInput[] memory swapInputs = new IReactor.SwapInput[](2);
         swapInputs[0] = _swapInput(vault0, 4 ether, 4 ether);
-        swapInputs[1] = _swapInput(vault1, 6 ether, 6 ether);
+        swapInputs[1] = _swapInput(address(secondaryAdapter), vault1, 6 ether, 6 ether);
 
         IReactor.Order memory order = _order(outputs, 10 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -108,7 +106,8 @@ contract ReactorTest is Test {
         assertEq(rwa.balanceOf(vault0Account), 4 ether);
         assertEq(rwa.balanceOf(vault1Account), 6 ether);
         assertEq(outputToken.balanceOf(swapper), 10 ether);
-        assertEq(adapter.swapCount(), 2);
+        assertEq(adapter.swapCount(), 1);
+        assertEq(secondaryAdapter.swapCount(), 1);
     }
 
     function testFillRoutesSwapInputsToTheirAdapters() public {
@@ -504,8 +503,8 @@ contract ReactorTest is Test {
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
         IReactor.SwapInput memory swap = IReactor.SwapInput({
             adapter: address(adapter),
-            swap: IInstantRedemptionAdapter.Swap({
-                recipient: filler, vault: vault0, tokenIn: address(otherRwa), amountIn: 5 ether, amountOut: 5 ether
+            swap: ILiquidLaneAdapter.Swap({
+                recipient: filler, tokenIn: address(otherRwa), amountIn: 5 ether, amountOut: 5 ether
             })
         });
         IReactor.Order memory order = _order(outputs, 5 ether);
@@ -545,7 +544,7 @@ contract ReactorTest is Test {
         swapInputs[0] = _swapInput(vault0, 4 ether, 4 ether);
 
         IReactor.DiscountSwapInput[] memory discountSwapInputs = new IReactor.DiscountSwapInput[](1);
-        discountSwapInputs[0] = _discountSwapInput(vault1, 6 ether, 6 ether);
+        discountSwapInputs[0] = _discountSwapInput(address(secondaryAdapter), vault1, 6 ether, 6 ether);
 
         IReactor.Order memory order = _order(outputs, 10 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -557,8 +556,10 @@ contract ReactorTest is Test {
         assertEq(rwa.balanceOf(vault1Account), 6 ether);
         assertEq(outputToken.balanceOf(swapper), 10 ether);
         assertEq(adapter.swapCount(), 1);
-        assertEq(adapter.discountSwapCount(), 1);
+        assertEq(adapter.discountSwapCount(), 0);
+        assertEq(secondaryAdapter.discountSwapCount(), 1);
         assertEq(rwa.balanceOf(address(adapter)), 0);
+        assertEq(rwa.balanceOf(address(secondaryAdapter)), 0);
     }
 
     function testFillRoutesDiscountSwapInputsToTheirAdapters() public {
@@ -611,8 +612,8 @@ contract ReactorTest is Test {
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
         IReactor.SwapInput memory swap = IReactor.SwapInput({
             adapter: address(adapter),
-            swap: IInstantRedemptionAdapter.Swap({
-                recipient: filler, vault: vault0, tokenIn: address(rwa), amountIn: 4 ether, amountOut: 5 ether
+            swap: ILiquidLaneAdapter.Swap({
+                recipient: filler, tokenIn: address(rwa), amountIn: 4 ether, amountOut: 5 ether
             })
         });
 
@@ -711,7 +712,9 @@ contract ReactorTest is Test {
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
 
         IExecutor.Call[] memory calls = new IExecutor.Call[](0);
-        IReactor.SwapInput memory swap = _swapInput(makeAddr("missingVault"), 5 ether, 5 ether);
+        MockAdapter failingAdapter = new MockAdapter();
+        adapterFactory.setEntity(address(failingAdapter), true);
+        IReactor.SwapInput memory swap = _swapInput(address(failingAdapter), vault0, 5 ether, 5 ether);
 
         IReactor.Order memory order = _order(outputs, 5 ether);
         bytes memory protocolSignature = _signOrder(order);
@@ -722,6 +725,7 @@ contract ReactorTest is Test {
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(rwa.balanceOf(address(adapter)), 0);
+        assertEq(rwa.balanceOf(address(failingAdapter)), 0);
         assertEq(outputToken.balanceOf(swapper), 0);
     }
 
@@ -887,13 +891,13 @@ contract ReactorTest is Test {
         );
     }
 
-    function _swap(address vault, uint256 amountIn, uint256 amountOut)
+    function _swap(address, uint256 amountIn, uint256 amountOut)
         internal
         view
-        returns (IInstantRedemptionAdapter.Swap memory)
+        returns (ILiquidLaneAdapter.Swap memory)
     {
-        return IInstantRedemptionAdapter.Swap({
-            recipient: filler, vault: vault, tokenIn: address(rwa), amountIn: amountIn, amountOut: amountOut
+        return ILiquidLaneAdapter.Swap({
+            recipient: filler, tokenIn: address(rwa), amountIn: amountIn, amountOut: amountOut
         });
     }
 
@@ -921,16 +925,15 @@ contract ReactorTest is Test {
         return _discountSwapInput(address(adapter), vault, amountIn, amountOut);
     }
 
-    function _discountSwapInput(address adapter_, address vault, uint256 amountIn, uint256 amountOut)
+    function _discountSwapInput(address adapter_, address, uint256 amountIn, uint256)
         internal
         view
         returns (IReactor.DiscountSwapInput memory)
     {
         return IReactor.DiscountSwapInput({
             adapter: adapter_,
-            discountSwap: IInstantRedemptionAdapter.DiscountSwap({
-                discount: IInstantRedemptionAdapter.Discount({
-                    vault: vault,
+            discountSwap: ILiquidLaneAdapter.DiscountSwap({
+                discount: ILiquidLaneAdapter.Discount({
                     tokenToRedeem: address(rwa),
                     discount: 50_000,
                     signer: protocol,
@@ -943,8 +946,7 @@ contract ReactorTest is Test {
             }),
             protocolSignature: hex"5678",
             recipient: filler,
-            amountIn: amountIn,
-            amountOut: amountOut
+            amountIn: amountIn
         });
     }
 }
@@ -957,30 +959,32 @@ contract MockAdapterFactory {
     }
 }
 
-contract MockAdapter is IInstantRedemptionAdapter {
-    mapping(address vault => mapping(address token => address account)) internal _accounts;
+contract MockAdapter is ILiquidLaneAdapter {
+    mapping(address token => address account) internal _accounts;
     uint256 public swapCount;
     uint256 public signedSwapCount;
     uint256 public discountSwapCount;
 
     function setAccount(address vault, address token, address account) public {
-        _accounts[vault][token] = account;
+        vault;
+        _accounts[token] = account;
     }
 
     function getAccount(address vault, address token) public view returns (address) {
-        return _accounts[vault][token];
+        vault;
+        return _accounts[token];
     }
 
-    function swap(IInstantRedemptionAdapter.Swap calldata swap) public {
-        address account = _accounts[swap.vault][swap.tokenIn];
+    function swap(ILiquidLaneAdapter.Swap calldata swap) public {
+        address account = _accounts[swap.tokenIn];
         uint256 balance = ERC20(swap.tokenIn).balanceOf(address(this));
         require(account != address(0) && balance >= swap.amountIn, "missing rwa");
         ERC20(swap.tokenIn).transfer(account, swap.amountIn);
         ++swapCount;
     }
 
-    function swap(IInstantRedemptionAdapter.SignedSwap calldata signedSwap, bytes calldata) public {
-        address account = _accounts[signedSwap.vault][signedSwap.tokenIn];
+    function swap(ILiquidLaneAdapter.SignedSwap calldata signedSwap, bytes calldata) public {
+        address account = _accounts[signedSwap.tokenIn];
         uint256 balance = ERC20(signedSwap.tokenIn).balanceOf(address(this));
         require(account != address(0) && balance >= signedSwap.amountIn, "missing rwa");
         ERC20(signedSwap.tokenIn).transfer(account, signedSwap.amountIn);
@@ -988,13 +992,12 @@ contract MockAdapter is IInstantRedemptionAdapter {
     }
 
     function swap(
-        IInstantRedemptionAdapter.DiscountSwap calldata discountSwap,
+        ILiquidLaneAdapter.DiscountSwap calldata discountSwap,
         bytes calldata,
         address recipient,
-        uint256 amountIn,
-        uint256
-    ) public {
-        address account = _accounts[discountSwap.discount.vault][discountSwap.discount.tokenToRedeem];
+        uint256 amountIn
+    ) public returns (uint256 amountOut) {
+        address account = _accounts[discountSwap.discount.tokenToRedeem];
         uint256 balance = ERC20(discountSwap.discount.tokenToRedeem).balanceOf(address(this));
         require(account != address(0) && balance >= amountIn, "missing rwa");
         ERC20(discountSwap.discount.tokenToRedeem).transfer(account, amountIn);
@@ -1002,6 +1005,7 @@ contract MockAdapter is IInstantRedemptionAdapter {
             recipient.code.length;
         }
         ++discountSwapCount;
+        return amountIn;
     }
 }
 
