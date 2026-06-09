@@ -2,24 +2,41 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity ^0.8.0;
 
+/// @dev Precision used for discount values expressed in ppm.
+uint256 constant DISCOUNT_PRECISION = 10 ** 6;
+
+/// @dev EIP-712 typehash for signed adapter swap legs.
+bytes32 constant SIGNED_SWAP_TYPEHASH = keccak256(
+    "SignedSwap(address recipient,address tokenIn,uint256 amountIn,uint256 amountOut,address caller,address signer,uint256 nonce,uint48 deadline)"
+);
+
+/// @dev EIP-712 typehash for reusable signed discount policies.
+bytes32 constant DISCOUNT_TYPEHASH = keccak256(
+    "Discount(address tokenToRedeem,uint256 discount,address signer,address protocol,uint256 nonce,uint48 deadline)"
+);
+
+/// @dev EIP-712 typehash for protocol-wrapped discount swaps.
+bytes32 constant DISCOUNT_SWAP_TYPEHASH = keccak256(
+    "DiscountSwap(Discount discount,bytes signerSignature,uint48 protocolDeadline)"
+    "Discount(address tokenToRedeem,uint256 discount,address signer,address protocol,uint256 nonce,uint48 deadline)"
+);
+
 /**
- * @title IInstantRedemptionAdapter
- * @notice Interface for the instant redemption adapter.
+ * @title ILiquidLaneAdapter
+ * @notice Interface for the LiquidLane adapter, bound to a single vault.
  */
-interface IInstantRedemptionAdapter {
+interface ILiquidLaneAdapter {
     /* STRUCTS */
 
     /**
      * @notice Direct authorized swap payload.
-     * @param recipient Recipient of the collateral output.
-     * @param vault Vault used for the swap.
+     * @param recipient Recipient of the vault-asset output.
      * @param tokenIn Token-to-redeem consumed by the swap.
      * @param amountIn Token-to-redeem amount consumed by the swap.
-     * @param amountOut Collateral amount requested from the vault.
+     * @param amountOut Vault-asset amount requested from the vault.
      */
     struct Swap {
         address recipient;
-        address vault;
         address tokenIn;
         uint256 amountIn;
         uint256 amountOut;
@@ -27,11 +44,10 @@ interface IInstantRedemptionAdapter {
 
     /**
      * @notice Delegated swap payload signed by an authorized signer.
-     * @param recipient Recipient of the collateral output.
-     * @param vault Vault used for the swap.
+     * @param recipient Recipient of the vault-asset output.
      * @param tokenIn Token-to-redeem consumed by the swap.
      * @param amountIn Token-to-redeem amount consumed by the swap.
-     * @param amountOut Collateral amount requested from the vault.
+     * @param amountOut Vault-asset amount requested from the vault.
      * @param caller Caller authorized to submit the signed swap onchain.
      * @param signer Authorized market maker, filler, or curator that signed the swap.
      * @param nonce Nonce consumed for replay protection.
@@ -39,19 +55,17 @@ interface IInstantRedemptionAdapter {
      */
     struct SignedSwap {
         address recipient;
-        address vault;
         address tokenIn;
         uint256 amountIn;
         uint256 amountOut;
         address caller;
         address signer;
         uint256 nonce;
-        uint256 deadline;
+        uint48 deadline;
     }
 
     /**
-     * @notice Reusable signed discount policy for one vault redemption pair.
-     * @param vault Vault used for the swap.
+     * @notice Reusable signed discount policy for one redemption pair.
      * @param tokenToRedeem Token-to-redeem consumed by the swap.
      * @param discount Discount in ppm.
      * @param signer Authorized market maker, filler, or curator that signed the discount.
@@ -60,7 +74,6 @@ interface IInstantRedemptionAdapter {
      * @param deadline Discount expiry timestamp.
      */
     struct Discount {
-        address vault;
         address tokenToRedeem;
         uint256 discount;
         address signer;
@@ -84,22 +97,14 @@ interface IInstantRedemptionAdapter {
     /* FUNCTIONS */
 
     /**
-     * @notice Returns the redemption account for a vault and token-to-redeem pair.
-     * @param vault Vault address.
-     * @param tokenToRedeem Token-to-redeem address.
-     * @return account Redemption account address.
-     */
-    function getAccount(address vault, address tokenToRedeem) external view returns (address account);
-
-    /**
-     * @notice Releases collateral for a funded vault leg.
+     * @notice Releases collateral for a funded direct adapter leg.
      * @param swap Direct-caller adapter draw parameters.
      * @dev Assumes `swap.tokenIn` has already been transferred to the adapter before the call.
      */
     function swap(Swap calldata swap) external;
 
     /**
-     * @notice Releases collateral for a delegated, signed vault leg.
+     * @notice Releases collateral for a delegated, signed adapter leg.
      * @param signedSwap Delegated adapter draw parameters.
      * @param signature Signature consumed by the adapter.
      * @dev Assumes `signedSwap.tokenIn` has already been transferred to the adapter before the call.
@@ -107,19 +112,18 @@ interface IInstantRedemptionAdapter {
     function swap(SignedSwap calldata signedSwap, bytes calldata signature) external;
 
     /**
-     * @notice Releases collateral for a discount-backed vault leg.
+     * @notice Releases collateral for a discount-backed adapter leg.
      * @param discountSwap Protocol-authorized reusable discount payload.
      * @param protocolSignature Protocol signature over `discountSwap`.
      * @param recipient Recipient that receives collateral from the adapter.
      * @param amountIn Token-to-redeem amount consumed by the swap.
-     * @param amountOut Collateral amount requested from the adapter.
+     * @return amountOut Collateral amount released by the adapter.
      * @dev Assumes `discountSwap.discount.tokenToRedeem` has already been transferred to the adapter before the call.
      */
     function swap(
         DiscountSwap calldata discountSwap,
         bytes calldata protocolSignature,
         address recipient,
-        uint256 amountIn,
-        uint256 amountOut
-    ) external;
+        uint256 amountIn
+    ) external returns (uint256 amountOut);
 }

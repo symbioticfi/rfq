@@ -3,7 +3,7 @@
 pragma solidity 0.8.28;
 
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {IInstantRedemptionAdapter} from "./interfaces/IInstantRedemptionAdapter.sol";
+import {ILiquidLaneAdapter} from "./interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
@@ -92,16 +92,15 @@ contract Executor is Ownable, IExecutor {
         }
 
         for (uint256 i; i < swapInputs.length; ++i) {
-            IInstantRedemptionAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
+            ILiquidLaneAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
-            IInstantRedemptionAdapter(discountSwapInputs[i].adapter)
+            ILiquidLaneAdapter(discountSwapInputs[i].adapter)
                 .swap(
                     discountSwapInputs[i].discountSwap,
                     discountSwapInputs[i].protocolSignature,
                     discountSwapInputs[i].recipient,
-                    discountSwapInputs[i].amountIn,
-                    discountSwapInputs[i].amountOut
+                    discountSwapInputs[i].amountIn
                 );
         }
 
