@@ -13,14 +13,13 @@ import {Offer} from "grunt/src/interfaces/request/IOfferReceiver.sol";
 import {IWhitelist} from "3f-request-whitelist/src/IWhitelist.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-
-import {EnumerableSetLib} from "@solady/src/utils/EnumerableSetLib.sol";
-import {FixedPointMathLib as Math} from "@solady/src/utils/FixedPointMathLib.sol";
-import {SafeCastLib} from "@solady/src/utils/SafeCastLib.sol";
-import {SafeTransferLib as SafeERC20} from "@solady/src/utils/SafeTransferLib.sol";
-import {SignatureCheckerLib} from "@solady/src/utils/SignatureCheckerLib.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /// @title  BridgeFacilitatorAdapter
 /// @notice Symbiotic VaultV2 adapter that participates in 3F (Grunt) bridge-loan auctions as a Bridge
@@ -36,10 +35,10 @@ import {SignatureCheckerLib} from "@solady/src/utils/SignatureCheckerLib.sol";
 ///         3F's `RequestWhitelist`; no local per-Request budget is kept. See
 ///         3F_BRIDGE_FACILITATOR_INTEGRATION.md.
 contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
-    using EnumerableSetLib for EnumerableSetLib.AddressSet;
+    using EnumerableSet for EnumerableSet.AddressSet;
     using Math for uint256;
-    using SafeCastLib for uint256;
-    using SafeERC20 for address;
+    using SafeCast for uint256;
+    using SafeERC20 for IERC20;
 
     /* ERRORS */
 
@@ -81,7 +80,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     uint256 public outstandingPrincipal;
 
     /// @dev Open (consumed, unredeemed) Requests.
-    EnumerableSetLib.AddressSet private _activeRequests;
+    EnumerableSet.AddressSet private _activeRequests;
 
     /// @dev Set only while pulling collateral to fund a consume; gates `allocatable()`.
     bool internal transient _inConsume;
@@ -137,7 +136,8 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
             if (pulled < shortfall) revert InsufficientLiquidity();
         }
 
-        asset.safeApprove(request, principal);
+        // Approve the Request to pull exactly `principal` (consume() transferFroms right after).
+        IERC20(asset).forceApprove(request, principal);
 
         positions[request] = Position(principal.toUint128(), yield.toUint128(), uint48(block.timestamp), false);
         outstandingPrincipal += principal;
@@ -176,7 +176,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     /// @dev Accepts `signature` iff produced by `offerSigner` over `hash`.
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
         address signer = offerSigner;
-        if (signer != address(0) && SignatureCheckerLib.isValidSignatureNowCalldata(signer, hash, signature)) {
+        if (signer != address(0) && SignatureChecker.isValidSignatureNow(signer, hash, signature)) {
             return IERC1271.isValidSignature.selector;
         }
         return 0xffffffff;

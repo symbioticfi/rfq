@@ -7,8 +7,7 @@ import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams} from "./interfaces/
 import {IOperationCallback} from "./interfaces/IOperationCallback.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
-import {SafeTransferLib as SafeERC20} from "@solady/src/utils/SafeTransferLib.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title SymbioticOevSolver
 /// @notice OEV liquidation callback that routes seized RWA collateral through a Symbiotic
@@ -16,7 +15,7 @@ import {SafeTransferLib as SafeERC20} from "@solady/src/utils/SafeTransferLib.so
 /// @dev    Designed for the Morpho Blue liquidation callback flow described in
 ///         https://github.com/redstone-finance/redstone-evm-examples/blob/main/oev/solver-example/Solver.sol
 contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
-    using SafeERC20 for address;
+    using SafeERC20 for IERC20;
 
     /* ERRORS */
 
@@ -126,7 +125,7 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
         uint256 seizedBalance = IERC20(ctx.collateralToken).balanceOf(address(this));
 
         // Push the seized RWA to the IR adapter, which expects the token to already be in place.
-        ctx.collateralToken.safeTransfer(IR_ADAPTER, seizedBalance);
+        IERC20(ctx.collateralToken).safeTransfer(IR_ADAPTER, seizedBalance);
 
         // Pull vault collateral (the loan token) out of the adapter. amountOut must respect getMaxRate.
         IInstantRedemptionAdapter(IR_ADAPTER).swap(
@@ -143,13 +142,13 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
         if (loanBalance < repaidAssets) revert InsufficientLoanProceeds();
 
         // Approve Morpho to pull repaidAssets when the callback returns.
-        ctx.loanToken.safeApproveWithRetry(MORPHO, repaidAssets);
+        IERC20(ctx.loanToken).forceApprove(MORPHO, repaidAssets);
     }
 
     /* OWNER */
 
     function withdrawERC20(address token, address to, uint256 amount) external onlyOwner {
-        token.safeTransfer(to, amount);
+        IERC20(token).safeTransfer(to, amount);
     }
 
     function withdrawNative(address to, uint256 amount) external onlyOwner {
