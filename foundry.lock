@@ -1,4 +1,10 @@
 {
+  "lib/3f-request-whitelist": {
+    "tag": {
+      "name": "v1.0.0",
+      "rev": "84033e4e1583535a976d84dca8cd513e3241ce3b"
+    }
+  },
   "lib/core-mirror": {
     "branch": {
       "name": "ir-adapter",
@@ -9,6 +15,12 @@
     "tag": {
       "name": "v1.15.0",
       "rev": "0844d7e1fc5e60d77b68e469bff60265f236c398"
+    }
+  },
+  "lib/grunt": {
+    "tag": {
+      "name": "v1.1.0",
+      "rev": "adcdd5002188ecbe05cf272347bc80350ae52b8c"
     }
   },
   "lib/openzeppelin-contracts": {

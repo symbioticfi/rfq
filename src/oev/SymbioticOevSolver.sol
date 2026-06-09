@@ -2,12 +2,13 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
-import {IInstantRedemptionAdapter} from "../interfaces/IInstantRedemptionAdapter.sol";
 import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams} from "./interfaces/IMorpho.sol";
 import {IOperationCallback} from "./interfaces/IOperationCallback.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import {IInstantRedemptionAdapter} from "@symbioticfi/core/src/interfaces/vault/adapters/IInstantRedemptionAdapter.sol";
 
 /// @title SymbioticOevSolver
 /// @notice OEV liquidation callback that routes seized RWA collateral through a Symbiotic

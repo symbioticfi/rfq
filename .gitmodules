@@ -7,7 +7,7 @@
 [submodule "lib/core-mirror"]
 	path = lib/core-mirror
 	url = https://github.com/symbioticfi/core-mirror
-	branch = delegator-simplify
+	branch = ir-adapter
 [submodule "lib/grunt"]
 	path = lib/grunt
 	url = https://github.com/3FLabs/grunt
