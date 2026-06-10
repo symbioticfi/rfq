@@ -30,9 +30,11 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 /// @dev    Just-in-time funding (mirrors `LiquidLaneAdapter._swap`): the adapter holds no standing idle
 ///         collateral. `allocatable()` is 0 except while mid-consume (`_inConsume`), so the delegator can
 ///         only push collateral in during the JIT pull and the curator cannot pre-stage funds here. The
-///         per-adapter cap is `delegator.limitOf`. The adapter is the `offer.maker`, validating offer
-///         signatures via EIP-1271 against an owner-rotatable `offerSigner`. Every consume is gated by
-///         3F's `RequestWhitelist`; no local per-Request budget is kept. See
+///         per-adapter funding ceiling is `delegator.limitOf`; on top of it the adapter enforces
+///         owner-set risk caps at consume time (per-Request / total collateral, min yield, max
+///         concurrent loans — see `setExposureLimits`), which the off-chain bot reads to pre-screen
+///         offers. The adapter is the `offer.maker`, validating offer signatures via EIP-1271 against an
+///         owner-rotatable `offerSigner`. Every consume is also gated by 3F's `RequestWhitelist`. See
 ///         3F_BRIDGE_FACILITATOR_INTEGRATION.md.
 contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -48,6 +50,14 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     error InsufficientLiquidity();
     /// @notice The Request's underlying asset does not match the vault asset.
     error AssetMismatch();
+    /// @notice `principal` exceeds the per-Request collateral cap.
+    error PerRequestCapExceeded();
+    /// @notice Funding this Request would push outstanding collateral past the sleeve cap.
+    error SleeveCapExceeded();
+    /// @notice The adapter already holds the maximum number of concurrent open loans.
+    error TooManyConcurrentLoans();
+    /// @notice The Request's yield is below the minimum required return (in bps of principal).
+    error YieldTooLow();
 
     /* TYPES */
 
@@ -79,15 +89,30 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     /// @notice Principal currently locked in live (consumed, unredeemed) loans.
     uint256 public outstandingPrincipal;
 
+    /// @notice Max collateral the adapter will front for a single Request (0 = no limit).
+    uint256 public perRequestMaxCollateral;
+    /// @notice Max total outstanding collateral across live loans (0 = no limit). Layered under `limitOf`.
+    uint256 public totalMaxCollateral;
+    /// @notice Minimum Request yield, in bps of principal, the adapter will accept (0 = no floor).
+    uint256 public minRequestYieldBps;
+    /// @notice Max number of concurrent open loans (0 = no limit).
+    uint256 public maxConcurrentLoans;
+
     /// @dev Open (consumed, unredeemed) Requests.
     EnumerableSet.AddressSet private _activeRequests;
 
     /// @dev Set only while pulling collateral to fund a consume; gates `allocatable()`.
     bool internal transient _inConsume;
 
+    /// @dev Basis-point denominator for the minimum-yield check.
+    uint256 private constant _BPS = 10_000;
+
     /* EVENTS */
 
     event SetOfferSigner(address indexed signer);
+    event SetExposureLimits(
+        uint256 perRequestMaxCollateral, uint256 totalMaxCollateral, uint256 minRequestYieldBps, uint256 maxConcurrentLoans
+    );
     event PositionOpened(address indexed request, uint256 principal, uint256 ytExpected);
     event PositionRedeemed(address indexed request, uint256 principal, uint256 yield);
 
@@ -111,6 +136,24 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
         emit SetOfferSigner(signer);
     }
 
+    /// @notice Set the adapter-level exposure limits enforced at consume time (each 0 = disabled). These
+    ///         are the authoritative risk caps; the off-chain bot reads them to pre-screen offers. They
+    ///         sit on top of the delegator's per-adapter `limitOf` (the ultimate funding ceiling).
+    function setExposureLimits(
+        uint256 perRequestMaxCollateral_,
+        uint256 totalMaxCollateral_,
+        uint256 minRequestYieldBps_,
+        uint256 maxConcurrentLoans_
+    ) external onlyOwner {
+        perRequestMaxCollateral = perRequestMaxCollateral_;
+        totalMaxCollateral = totalMaxCollateral_;
+        minRequestYieldBps = minRequestYieldBps_;
+        maxConcurrentLoans = maxConcurrentLoans_;
+        emit SetExposureLimits(
+            perRequestMaxCollateral_, totalMaxCollateral_, minRequestYieldBps_, maxConcurrentLoans_
+        );
+    }
+
     /* 3F PULL-MODE CALLBACK */
 
     /// @inheritdoc IRequestCallback
@@ -125,6 +168,8 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
         address asset = IRequest(request).asset();
         if (asset != _asset()) revert AssetMismatch();
+
+        _enforceExposure(principal, yield);
 
         // `_inConsume` opens `allocatable()` so the delegator may push the pulled collateral in via `allocate()`.
         uint256 free = IERC20(asset).balanceOf(address(this));
@@ -234,6 +279,28 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     /// @dev The vault's underlying ERC4626 asset.
     function _asset() internal view returns (address) {
         return IERC4626(vault).asset();
+    }
+
+    /// @dev Enforce the adapter-level exposure caps before funding a consume (each 0 = disabled).
+    ///      Runs before the JIT pull so a rejected Request never moves collateral. `yield` is the YT
+    ///      amount about to be minted; the minimum-return floor requires `yield/principal >= bps/1e4`.
+    function _enforceExposure(uint256 principal, uint256 yield) internal view {
+        uint256 perRequest = perRequestMaxCollateral;
+        if (perRequest != 0 && principal > perRequest) {
+            revert PerRequestCapExceeded();
+        }
+        uint256 total = totalMaxCollateral;
+        if (total != 0 && outstandingPrincipal + principal > total) {
+            revert SleeveCapExceeded();
+        }
+        uint256 maxLoans = maxConcurrentLoans;
+        if (maxLoans != 0 && _activeRequests.length() >= maxLoans) {
+            revert TooManyConcurrentLoans();
+        }
+        uint256 minYield = minRequestYieldBps;
+        if (minYield != 0 && yield * _BPS < principal * minYield) {
+            revert YieldTooLow();
+        }
     }
 
     /// @dev Reverts unless `request` is live `Whitelisted` — `PausedWhitelisted` (circuit breaker active)

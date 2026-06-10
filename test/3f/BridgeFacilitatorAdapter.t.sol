@@ -287,6 +287,69 @@ contract BridgeFacilitatorAdapterTest is Test {
     }
 
     /* ---------------------------------------------------------------------- */
+    /*                          exposure limits                               */
+    /* ---------------------------------------------------------------------- */
+
+    function test_setExposureLimits_onlyOwner() public {
+        vm.prank(makeAddr("notOwner"));
+        vm.expectRevert();
+        adapter.setExposureLimits(1, 2, 3, 4);
+    }
+
+    function test_setExposureLimits_storesValues() public {
+        adapter.setExposureLimits(PRINCIPAL, 5 * PRINCIPAL, 100, 10);
+        assertEq(adapter.perRequestMaxCollateral(), PRINCIPAL);
+        assertEq(adapter.totalMaxCollateral(), 5 * PRINCIPAL);
+        assertEq(adapter.minRequestYieldBps(), 100);
+        assertEq(adapter.maxConcurrentLoans(), 10);
+    }
+
+    function test_consume_withinExposureLimits_succeeds() public {
+        // YIELD/PRINCIPAL = 2_000/100_000 = 200 bps, above the 100 bps floor.
+        adapter.setExposureLimits(PRINCIPAL, 5 * PRINCIPAL, 100, 10);
+        request.consume(address(adapter), PRINCIPAL, YIELD);
+        assertEq(adapter.outstandingPrincipal(), PRINCIPAL);
+    }
+
+    function test_consume_revertsWhenPerRequestCapExceeded() public {
+        adapter.setExposureLimits(PRINCIPAL - 1, 0, 0, 0);
+        vm.expectRevert(BridgeFacilitatorAdapter.PerRequestCapExceeded.selector);
+        request.consume(address(adapter), PRINCIPAL, YIELD);
+    }
+
+    function test_consume_revertsWhenSleeveCapExceeded() public {
+        // One loan already open; a second would push outstanding past the total cap.
+        adapter.setExposureLimits(0, PRINCIPAL + (PRINCIPAL / 2), 0, 0);
+        request.consume(address(adapter), PRINCIPAL, YIELD);
+        MockRequest second = new MockRequest(usdc);
+        whitelist.set(address(second), IWhitelist.WhitelistStatus.Whitelisted);
+        vm.expectRevert(BridgeFacilitatorAdapter.SleeveCapExceeded.selector);
+        second.consume(address(adapter), PRINCIPAL, YIELD);
+    }
+
+    function test_consume_revertsWhenTooManyConcurrentLoans() public {
+        adapter.setExposureLimits(0, 0, 0, 1); // at most one open loan
+        request.consume(address(adapter), PRINCIPAL, YIELD);
+        MockRequest second = new MockRequest(usdc);
+        whitelist.set(address(second), IWhitelist.WhitelistStatus.Whitelisted);
+        vm.expectRevert(BridgeFacilitatorAdapter.TooManyConcurrentLoans.selector);
+        second.consume(address(adapter), PRINCIPAL, YIELD);
+    }
+
+    function test_consume_revertsWhenYieldTooLow() public {
+        // Require 300 bps; the offer's 200 bps (YIELD/PRINCIPAL) is below it.
+        adapter.setExposureLimits(0, 0, 300, 0);
+        vm.expectRevert(BridgeFacilitatorAdapter.YieldTooLow.selector);
+        request.consume(address(adapter), PRINCIPAL, YIELD);
+    }
+
+    function test_consume_yieldExactlyAtFloor_succeeds() public {
+        adapter.setExposureLimits(0, 0, 200, 0); // floor == offer's 200 bps
+        request.consume(address(adapter), PRINCIPAL, YIELD);
+        assertEq(adapter.outstandingPrincipal(), PRINCIPAL);
+    }
+
+    /* ---------------------------------------------------------------------- */
     /*                          allocatable gating                            */
     /* ---------------------------------------------------------------------- */
 

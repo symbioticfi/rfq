@@ -17,8 +17,13 @@ import {BridgeFacilitatorAdapter} from "../../src/3f/BridgeFacilitatorAdapter.so
 //   REQUEST_WHITELIST 3F RequestWhitelist (use the MockWhitelist address on testnets)
 //   VAULT_FACTORY     Symbiotic vault factory/registry (validates the vault at initialize)
 // Optional env:
-//   OFFER_SIGNER      EOA whose signatures the adapter accepts via EIP-1271; when set, setOfferSigner
-//                     is called in the same broadcast.
+//   OFFER_SIGNER             EOA whose signatures the adapter accepts via EIP-1271; when set,
+//                            setOfferSigner is called in the same broadcast.
+//   Exposure limits (each defaults to 0 = disabled), set via setExposureLimits in the same broadcast:
+//   PER_REQUEST_MAX_COLLATERAL  max collateral per single Request (collateral decimals), e.g. 100000
+//   TOTAL_MAX_COLLATERAL        max total outstanding collateral across loans,            e.g. 500000
+//   MIN_REQUEST_YIELD_BPS       minimum Request yield in bps of principal,                e.g. 100
+//   MAX_CONCURRENT_LOANS        max concurrent open loans,                                e.g. 10
 //
 // forge script script/deploy/DeployBridgeFacilitatorAdapter.s.sol:DeployBridgeFacilitatorAdapterScript \
 //   --rpc-url sepolia --private-key $SOLVER_PRIVATE_KEY --broadcast
@@ -28,6 +33,10 @@ contract DeployBridgeFacilitatorAdapterScript is Script {
         address requestWhitelist = vm.envAddress("REQUEST_WHITELIST");
         address vaultFactory = vm.envAddress("VAULT_FACTORY");
         address offerSigner = vm.envOr("OFFER_SIGNER", address(0));
+        uint256 perRequestMaxCollateral = vm.envOr("PER_REQUEST_MAX_COLLATERAL", uint256(0));
+        uint256 totalMaxCollateral = vm.envOr("TOTAL_MAX_COLLATERAL", uint256(0));
+        uint256 minRequestYieldBps = vm.envOr("MIN_REQUEST_YIELD_BPS", uint256(0));
+        uint256 maxConcurrentLoans = vm.envOr("MAX_CONCURRENT_LOANS", uint256(0));
 
         address collateral = IERC4626(vault).asset();
 
@@ -47,6 +56,9 @@ contract DeployBridgeFacilitatorAdapterScript is Script {
         if (offerSigner != address(0)) {
             adapter.setOfferSigner(offerSigner);
         }
+        adapter.setExposureLimits(
+            perRequestMaxCollateral, totalMaxCollateral, minRequestYieldBps, maxConcurrentLoans
+        );
         vm.stopBroadcast();
 
         console2.log("Deployed BridgeFacilitatorAdapter (proxy):", address(adapter));
@@ -55,6 +67,10 @@ contract DeployBridgeFacilitatorAdapterScript is Script {
         console2.log("  owner:          ", adapter.owner());
         console2.log("  offerSigner:    ", adapter.offerSigner());
         console2.log("  collateral:     ", collateral);
+        console2.log("  perRequestMaxCollateral:", adapter.perRequestMaxCollateral());
+        console2.log("  totalMaxCollateral:     ", adapter.totalMaxCollateral());
+        console2.log("  minRequestYieldBps:     ", adapter.minRequestYieldBps());
+        console2.log("  maxConcurrentLoans:     ", adapter.maxConcurrentLoans());
         console2.log("Remaining curator setup (delegator authority, run separately):");
         console2.log("  - whitelist the adapter in the vault's AdapterRegistry");
         console2.log("  - delegator.addAdapter(adapter)        // auto-grants ALLOCATE_ROLE/DEALLOCATE_ROLE");
