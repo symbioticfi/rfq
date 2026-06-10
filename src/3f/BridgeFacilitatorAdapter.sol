@@ -31,10 +31,10 @@ import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet
 ///         collateral. `allocatable()` is 0 except while mid-consume (`_inConsume`), so the delegator can
 ///         only push collateral in during the JIT pull and the curator cannot pre-stage funds here. The
 ///         per-adapter funding ceiling is `delegator.limitOf`; on top of it the adapter enforces
-///         owner-set risk caps at consume time (per-Request / total collateral, min yield, max
-///         concurrent loans — see `setExposureLimits`), which the off-chain bot reads to pre-screen
-///         offers. The adapter is the `offer.maker`, validating offer signatures via EIP-1271 against an
-///         owner-rotatable `offerSigner`. Every consume is also gated by 3F's `RequestWhitelist`. See
+///         owner-set risk caps at consume time (see `setExposureLimits`), which the off-chain bot reads
+///         to pre-screen offers. The adapter is the `offer.maker`, validating offer signatures via
+///         EIP-1271 against an owner-rotatable `offerSigner`. Every consume is also gated by 3F's
+///         `RequestWhitelist`. See
 ///         3F_BRIDGE_FACILITATOR_INTEGRATION.md.
 contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -91,7 +91,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
     /// @notice Max collateral the adapter will front for a single Request (0 = no limit).
     uint256 public perRequestMaxCollateral;
-    /// @notice Max total outstanding collateral across live loans (0 = no limit). Layered under `limitOf`.
+    /// @notice Max total outstanding collateral across live loans (0 = no limit).
     uint256 public totalMaxCollateral;
     /// @notice Minimum Request yield, in bps of principal, the adapter will accept (0 = no floor).
     uint256 public minRequestYieldBps;
@@ -136,9 +136,8 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
         emit SetOfferSigner(signer);
     }
 
-    /// @notice Set the adapter-level exposure limits enforced at consume time (each 0 = disabled). These
-    ///         are the authoritative risk caps; the off-chain bot reads them to pre-screen offers. They
-    ///         sit on top of the delegator's per-adapter `limitOf` (the ultimate funding ceiling).
+    /// @notice Set the exposure limits enforced at consume time (each 0 = disabled). These are the
+    ///         authoritative risk caps; the off-chain bot reads them to pre-screen offers.
     function setExposureLimits(
         uint256 perRequestMaxCollateral_,
         uint256 totalMaxCollateral_,
