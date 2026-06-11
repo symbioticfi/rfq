@@ -1,3 +1,7 @@
 forge-std/=lib/forge-std/src/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+@openzeppelin/contracts-upgradeable/=lib/core-mirror/lib/openzeppelin-contracts-upgradeable/contracts/
+solady/=lib/3f-request-whitelist/lib/solady/src/
 @symbioticfi/core/=lib/core-mirror/
+grunt/=lib/grunt/
+3f-request-whitelist/=lib/3f-request-whitelist/
