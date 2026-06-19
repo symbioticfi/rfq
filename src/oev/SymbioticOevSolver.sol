@@ -3,8 +3,8 @@
 pragma solidity 0.8.28;
 
 import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
-import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams} from "./interfaces/IMorpho.sol";
 import {IOperationCallback} from "./interfaces/IOperationCallback.sol";
+import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams} from "./interfaces/IMorpho.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -19,10 +19,14 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
 
     /* ERRORS */
 
-    error NotExecutor();
-    error NotMorpho();
-    error NotOwner();
     error InsufficientLoanProceeds();
+
+    error NotExecutor();
+
+    error NotMorpho();
+
+    error NotOwner();
+
     error TransferFailed();
 
     /* IMMUTABLES */
