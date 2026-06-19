@@ -145,6 +145,19 @@ contract Reactor is EIP712, IReactor {
         if (totalAmountIn != order.request.amountIn) {
             revert InvalidAmountIn();
         }
+        if (order.request.outputs.length != order.outputs.length) {
+            revert InvalidOutput();
+        }
+        for (uint256 i; i < order.request.outputs.length; ++i) {
+            Output memory requestOutput = order.request.outputs[i];
+            Output memory orderOutput = order.outputs[i];
+            if (
+                orderOutput.token != requestOutput.token || orderOutput.recipient != requestOutput.recipient
+                    || orderOutput.amount < requestOutput.amount
+            ) {
+                revert InvalidOutput();
+            }
+        }
 
         _isUsedNonce[order.swapper].set(order.request.nonce);
         for (uint256 i; i < swapInputs.length; ++i) {
@@ -158,12 +171,12 @@ contract Reactor is EIP712, IReactor {
 
         IExecutor(msg.sender).execute(order, swapInputs, discountSwapInputs, executorData);
 
-        for (uint256 i; i < order.request.outputs.length; ++i) {
-            if (order.request.outputs[i].token == NATIVE) {
-                payable(order.request.outputs[i].recipient).sendValue(order.request.outputs[i].amount);
+        for (uint256 i; i < order.outputs.length; ++i) {
+            if (order.outputs[i].token == NATIVE) {
+                payable(order.outputs[i].recipient).sendValue(order.outputs[i].amount);
             } else {
-                IERC20(order.request.outputs[i].token)
-                    .safeTransferFrom(msg.sender, order.request.outputs[i].recipient, order.request.outputs[i].amount);
+                IERC20(order.outputs[i].token)
+                    .safeTransferFrom(msg.sender, order.outputs[i].recipient, order.outputs[i].amount);
             }
         }
 
@@ -185,7 +198,8 @@ contract Reactor is EIP712, IReactor {
                 _hashRequest(order.request),
                 keccak256(order.swapperSignature),
                 order.swapper,
-                order.filler
+                order.filler,
+                _hashOutputs(order.outputs)
             )
         );
     }
@@ -194,21 +208,28 @@ contract Reactor is EIP712, IReactor {
     /// @param request The request to hash.
     /// @return requestHash The EIP-712 struct hash for the request.
     function _hashRequest(Request memory request) internal pure returns (bytes32) {
-        bytes32[] memory outputHashes = new bytes32[](request.outputs.length);
-        for (uint256 i; i < request.outputs.length; ++i) {
-            outputHashes[i] = keccak256(abi.encode(OUTPUT_TYPEHASH, request.outputs[i]));
-        }
         return keccak256(
             abi.encode(
                 REQUEST_TYPEHASH,
                 request.tokenIn,
                 request.amountIn,
-                keccak256(abi.encodePacked(outputHashes)),
+                _hashOutputs(request.outputs),
                 request.deadline,
                 request.nonce,
                 request.protocol
             )
         );
+    }
+
+    /// @dev Hashes output arrays according to the Reactor EIP-712 schema.
+    /// @param outputs The outputs to hash.
+    /// @return The packed hash of individual output hashes.
+    function _hashOutputs(Output[] memory outputs) internal pure returns (bytes32) {
+        bytes32[] memory outputHashes = new bytes32[](outputs.length);
+        for (uint256 i; i < outputs.length; ++i) {
+            outputHashes[i] = keccak256(abi.encode(OUTPUT_TYPEHASH, outputs[i]));
+        }
+        return keccak256(abi.encodePacked(outputHashes));
     }
 
     /* RECEIVE FUNCTION */

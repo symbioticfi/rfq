@@ -180,7 +180,7 @@ contract BridgeFacilitatorAdapterTest is Test {
     address internal signer;
 
     uint256 internal constant PRINCIPAL = 100_000e6;
-    uint256 internal constant YIELD = 2_000e6;
+    uint256 internal constant YIELD = 2000e6;
     uint256 internal constant VAULT_LIQUIDITY = 10_000_000e6;
 
     function setUp() public {
@@ -202,9 +202,8 @@ contract BridgeFacilitatorAdapterTest is Test {
         adapterFactory.whitelist(address(impl));
 
         vaultFactory.setEntity(address(vault), true);
-        adapter = BridgeFacilitatorAdapter(
-            adapterFactory.create(1, address(this), abi.encode(address(vault), bytes("")))
-        );
+        adapter =
+            BridgeFacilitatorAdapter(adapterFactory.create(1, address(this), abi.encode(address(vault), bytes(""))));
 
         adapter.setOfferSigner(signer);
         whitelist.set(address(request), IWhitelist.WhitelistStatus.Whitelisted);
@@ -247,7 +246,9 @@ contract BridgeFacilitatorAdapterTest is Test {
         request.consume(address(adapter), PRINCIPAL, YIELD);
 
         assertEq(usdc.balanceOf(address(request)), PRINCIPAL, "request holds principal");
-        assertEq(usdc.balanceOf(address(vault)), VAULT_LIQUIDITY - (PRINCIPAL - idle), "vault funded only the shortfall");
+        assertEq(
+            usdc.balanceOf(address(vault)), VAULT_LIQUIDITY - (PRINCIPAL - idle), "vault funded only the shortfall"
+        );
         assertEq(usdc.balanceOf(address(adapter)), 0, "idle balance fully spent");
     }
 

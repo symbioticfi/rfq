@@ -126,14 +126,15 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
         IERC20(ctx.collateralToken).safeTransfer(LIQUID_LANE_ADAPTER, seizedBalance);
 
         // Pull vault collateral (the loan token) out of the adapter. amountOut must respect getMaxRate.
-        ILiquidLaneAdapter(LIQUID_LANE_ADAPTER).swap(
-            ILiquidLaneAdapter.Swap({
+        ILiquidLaneAdapter(LIQUID_LANE_ADAPTER)
+            .swap(
+                ILiquidLaneAdapter.Swap({
                 recipient: address(this),
                 tokenIn: ctx.collateralToken,
                 amountIn: seizedBalance,
                 amountOut: ctx.leg.swapAmountOut
             })
-        );
+            );
 
         uint256 loanBalance = IERC20(ctx.loanToken).balanceOf(address(this));
         if (loanBalance < repaidAssets) revert InsufficientLoanProceeds();
@@ -164,19 +165,14 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback {
         (address loanToken, address collateralToken, address oracle, address irm, uint256 lltv) =
             IMorpho(MORPHO).idToMarketParams(leg.marketId);
 
-        bytes memory cbData = abi.encode(
-            CallbackContext({leg: leg, loanToken: loanToken, collateralToken: collateralToken})
-        );
+        bytes memory cbData =
+            abi.encode(CallbackContext({leg: leg, loanToken: loanToken, collateralToken: collateralToken}));
 
         (uint256 assetsSeized, uint256 assetsRepaid) = IMorpho(MORPHO)
             .liquidate(
                 MarketParams({
-                    loanToken: loanToken,
-                    collateralToken: collateralToken,
-                    oracle: oracle,
-                    irm: irm,
-                    lltv: lltv
-                }),
+                loanToken: loanToken, collateralToken: collateralToken, oracle: oracle, irm: irm, lltv: lltv
+            }),
                 leg.borrower,
                 leg.seizedAssets,
                 leg.repaidShares,

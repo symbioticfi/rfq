@@ -111,27 +111,26 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
     event SetOfferSigner(address indexed signer);
     event SetExposureLimits(
-        uint256 perRequestMaxCollateral, uint256 totalMaxCollateral, uint256 minRequestYieldBps, uint256 maxConcurrentLoans
+        uint256 perRequestMaxCollateral,
+        uint256 totalMaxCollateral,
+        uint256 minRequestYieldBps,
+        uint256 maxConcurrentLoans
     );
     event PositionOpened(address indexed request, uint256 principal, uint256 ytExpected);
     event PositionRedeemed(address indexed request, uint256 principal, uint256 yield);
 
     /* CONSTRUCTOR */
 
-    constructor(
-        address requestWhitelist,
-        address vaultFactory,
-        address adapterFactory
-    ) Adapter(vaultFactory, adapterFactory) {
+    constructor(address requestWhitelist, address vaultFactory, address adapterFactory)
+        Adapter(vaultFactory, adapterFactory)
+    {
         REQUEST_WHITELIST = requestWhitelist;
     }
 
     /* OWNER: AUTHORIZATION */
 
     /// @notice Set the EOA whose signatures the adapter honors under EIP-1271.
-    function setOfferSigner(
-        address signer
-    ) external onlyOwner {
+    function setOfferSigner(address signer) external onlyOwner {
         offerSigner = signer;
         emit SetOfferSigner(signer);
     }
@@ -148,9 +147,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
         totalMaxCollateral = totalMaxCollateral_;
         minRequestYieldBps = minRequestYieldBps_;
         maxConcurrentLoans = maxConcurrentLoans_;
-        emit SetExposureLimits(
-            perRequestMaxCollateral_, totalMaxCollateral_, minRequestYieldBps_, maxConcurrentLoans_
-        );
+        emit SetExposureLimits(perRequestMaxCollateral_, totalMaxCollateral_, minRequestYieldBps_, maxConcurrentLoans_);
     }
 
     /* 3F PULL-MODE CALLBACK */
@@ -193,9 +190,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
     /// @notice Permissionless. Realizes any ready (`canWithdraw()`) Requests via `burnAll`, booking the
     ///         recovered principal as recallable. Unknown / not-yet-ready Requests are skipped, not reverted.
-    function redeem(
-        address[] calldata requests
-    ) external nonReentrant {
+    function redeem(address[] calldata requests) external nonReentrant {
         for (uint256 i; i < requests.length; ++i) {
             address request = requests[i];
             if (!_activeRequests.contains(request)) continue;
@@ -249,9 +244,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     /// @inheritdoc IAdapter
     /// @dev Mirror the recalled amount into `realizedPrincipal` (floored at 0) so it stays an accurate
     ///      count of realized-but-not-yet-recalled principal that the off-chain bot reads.
-    function deallocate(
-        uint256 amount
-    ) public override onlyDelegator returns (uint256 deallocated) {
+    function deallocate(uint256 amount) public override onlyDelegator returns (uint256 deallocated) {
         deallocated = super.deallocate(amount);
         realizedPrincipal = realizedPrincipal.saturatingSub(deallocated);
     }
@@ -259,17 +252,13 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     /* INTERNAL: IAdapter HOOKS */
 
     /// @dev Accounting passthrough for the JIT-pulled collateral; never reverts.
-    function _allocate(
-        uint256 amount
-    ) internal pure override returns (uint256) {
+    function _allocate(uint256 amount) internal pure override returns (uint256) {
         return amount;
     }
 
     /// @dev Principal locked in a live loan is illiquid, so this hook produces nothing beyond the free
     ///      balance the base `deallocate` already recalled (shortfalls are satisfied as loans redeem).
-    function _deallocate(
-        uint256
-    ) internal pure override returns (uint256) {
+    function _deallocate(uint256) internal pure override returns (uint256) {
         return 0;
     }
 
@@ -304,9 +293,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
     /// @dev Reverts unless `request` is live `Whitelisted` — `PausedWhitelisted` (circuit breaker active)
     ///      and every other state are rejected.
-    function _ensureAttested(
-        address request
-    ) internal view {
+    function _ensureAttested(address request) internal view {
         if (IWhitelist(REQUEST_WHITELIST).isWhitelisted(request) != IWhitelist.WhitelistStatus.Whitelisted) {
             revert NotAttested();
         }

@@ -16,7 +16,7 @@ bytes32 constant REQUEST_TYPEHASH = keccak256(
 );
 /* EIP-712 typehash for Reactor orders. */
 bytes32 constant ORDER_TYPEHASH = keccak256(
-    "Order(Request request,bytes swapperSignature,address swapper,address filler)"
+    "Order(Request request,bytes swapperSignature,address swapper,address filler,Output[] outputs)"
     "Output(address token,uint256 amount,address recipient)"
     "Request(address tokenIn,uint256 amountIn,Output[] outputs,uint256 deadline,uint256 nonce,address protocol)"
 );
@@ -106,12 +106,14 @@ interface IReactor {
      * @param swapperSignature Swapper signature over `request`.
      * @param swapper Swapper address that owns the input token and approved Reactor.
      * @param filler Winning filler address allowed to call the Reactor.
+     * @param outputs Protocol-authorized output obligations to deliver.
      */
     struct Order {
         Request request;
         bytes swapperSignature;
         address swapper;
         address filler;
+        Output[] outputs;
     }
 
     /**

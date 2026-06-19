@@ -158,6 +158,91 @@ contract ReactorTest is Test {
         assertEq(outputToken.balanceOf(swapper), 0);
     }
 
+    function testFillRevertsIfOrderOutputsMissRequestOutput() public {
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        order.outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: referrer});
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(IReactor.InvalidOutput.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+        assertEq(outputToken.balanceOf(swapper), 0);
+        assertEq(outputToken.balanceOf(referrer), 0);
+    }
+
+    function testFillRevertsIfOrderOutputAmountIsLessThanRequestOutput() public {
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        IReactor.Output[] memory orderOutputs = new IReactor.Output[](1);
+        orderOutputs[0] = IReactor.Output({token: address(outputToken), amount: 4 ether, recipient: swapper});
+        order.outputs = orderOutputs;
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(IReactor.InvalidOutput.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+        assertEq(outputToken.balanceOf(swapper), 0);
+    }
+
+    function testFillRevertsIfOrderOutputsLengthDoesNotMatchRequestOutputs() public {
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        IReactor.Output[] memory orderOutputs = new IReactor.Output[](2);
+        orderOutputs[0] = IReactor.Output({token: address(outputToken), amount: 6 ether, recipient: swapper});
+        orderOutputs[1] = IReactor.Output({token: address(outputToken), amount: 1 ether, recipient: referrer});
+        order.outputs = orderOutputs;
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.expectRevert(IReactor.InvalidOutput.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 0);
+        assertEq(outputToken.balanceOf(swapper), 0);
+    }
+
+    function testFillDeliversHigherOrderOutputsThatMeetRequestMinimums() public {
+        outputToken.mint(address(executor), 6 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        IReactor.Output[] memory orderOutputs = new IReactor.Output[](1);
+        orderOutputs[0] = IReactor.Output({token: address(outputToken), amount: 6 ether, recipient: swapper});
+        order.outputs = orderOutputs;
+        bytes memory protocolSignature = _signOrder(order);
+
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(rwa.balanceOf(vault0Account), 5 ether);
+        assertEq(outputToken.balanceOf(swapper), 6 ether);
+    }
+
     function testExecutorRequiresCaller() public {
         Reactor customReactor = new Reactor(address(adapterFactory));
         Executor lockedExecutor = new Executor(address(customReactor), address(this), new address[](0));
@@ -792,7 +877,11 @@ contract ReactorTest is Test {
             protocol: protocol
         });
         return IReactor.Order({
-            request: request, swapperSignature: _signRequest(request, reactor_), swapper: swapper, filler: filler_
+            request: request,
+            swapperSignature: _signRequest(request, reactor_),
+            swapper: swapper,
+            filler: filler_,
+            outputs: _copyOutputs(outputs)
         });
     }
 
@@ -867,28 +956,43 @@ contract ReactorTest is Test {
                 _hashRequest(order.request),
                 keccak256(order.swapperSignature),
                 order.swapper,
-                order.filler
+                order.filler,
+                _hashOutputs(order.outputs)
             )
         );
     }
 
     function _hashRequest(IReactor.Request memory request) internal pure returns (bytes32) {
-        bytes32[] memory outputHashes = new bytes32[](request.outputs.length);
-        for (uint256 i; i < request.outputs.length; ++i) {
-            outputHashes[i] = keccak256(abi.encode(OUTPUT_TYPEHASH, request.outputs[i]));
-        }
-
         return keccak256(
             abi.encode(
                 REQUEST_TYPEHASH,
                 request.tokenIn,
                 request.amountIn,
-                keccak256(abi.encodePacked(outputHashes)),
+                _hashOutputs(request.outputs),
                 request.deadline,
                 request.nonce,
                 request.protocol
             )
         );
+    }
+
+    function _hashOutputs(IReactor.Output[] memory outputs) internal pure returns (bytes32 outputsHash) {
+        bytes32[] memory outputHashes = new bytes32[](outputs.length);
+        for (uint256 i; i < outputs.length; ++i) {
+            outputHashes[i] = keccak256(abi.encode(OUTPUT_TYPEHASH, outputs[i]));
+        }
+        outputsHash = keccak256(abi.encodePacked(outputHashes));
+    }
+
+    function _copyOutputs(IReactor.Output[] memory outputs)
+        internal
+        pure
+        returns (IReactor.Output[] memory outputCopies)
+    {
+        outputCopies = new IReactor.Output[](outputs.length);
+        for (uint256 i; i < outputs.length; ++i) {
+            outputCopies[i] = outputs[i];
+        }
     }
 
     function _swap(address, uint256 amountIn, uint256 amountOut)

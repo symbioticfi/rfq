@@ -109,8 +109,8 @@ contract Executor is Ownable, IExecutor {
             calls[i].target.functionCallWithValue(calls[i].data, calls[i].value);
         }
 
-        for (uint256 i; i < order.request.outputs.length; ++i) {
-            address token = order.request.outputs[i].token;
+        for (uint256 i; i < order.outputs.length; ++i) {
+            address token = order.outputs[i].token;
             if (token != NATIVE && IERC20(token).allowance(address(this), REACTOR) < type(uint256).max) {
                 IERC20(token).forceApprove(REACTOR, type(uint256).max);
             }
