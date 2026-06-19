@@ -199,7 +199,11 @@ contract LiquidLaneIntegrationTest is Test {
             protocol: protocol
         });
         return IReactor.Order({
-            request: request, swapperSignature: _signRequest(request), swapper: swapper, filler: address(executor)
+            request: request,
+            swapperSignature: _signRequest(request),
+            swapper: swapper,
+            filler: address(executor),
+            outputs: _copyOutputs(outputs)
         });
     }
 
@@ -250,28 +254,43 @@ contract LiquidLaneIntegrationTest is Test {
                 _hashRequest(order.request),
                 keccak256(order.swapperSignature),
                 order.swapper,
-                order.filler
+                order.filler,
+                _hashOutputs(order.outputs)
             )
         );
     }
 
     function _hashRequest(IReactor.Request memory request) internal pure returns (bytes32) {
-        bytes32[] memory outputHashes = new bytes32[](request.outputs.length);
-        for (uint256 i; i < request.outputs.length; ++i) {
-            outputHashes[i] = keccak256(abi.encode(OUTPUT_TYPEHASH, request.outputs[i]));
-        }
-
         return keccak256(
             abi.encode(
                 REQUEST_TYPEHASH,
                 request.tokenIn,
                 request.amountIn,
-                keccak256(abi.encodePacked(outputHashes)),
+                _hashOutputs(request.outputs),
                 request.deadline,
                 request.nonce,
                 request.protocol
             )
         );
+    }
+
+    function _hashOutputs(IReactor.Output[] memory outputs) internal pure returns (bytes32 outputsHash) {
+        bytes32[] memory outputHashes = new bytes32[](outputs.length);
+        for (uint256 i; i < outputs.length; ++i) {
+            outputHashes[i] = keccak256(abi.encode(OUTPUT_TYPEHASH, outputs[i]));
+        }
+        outputsHash = keccak256(abi.encodePacked(outputHashes));
+    }
+
+    function _copyOutputs(IReactor.Output[] memory outputs)
+        internal
+        pure
+        returns (IReactor.Output[] memory outputCopies)
+    {
+        outputCopies = new IReactor.Output[](outputs.length);
+        for (uint256 i; i < outputs.length; ++i) {
+            outputCopies[i] = outputs[i];
+        }
     }
 
     function _swap(uint256 amountIn, uint256 amountOut) internal view returns (ILiquidLaneAdapter.Swap memory) {

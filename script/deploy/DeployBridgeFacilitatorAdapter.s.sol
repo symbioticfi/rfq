@@ -49,16 +49,12 @@ contract DeployBridgeFacilitatorAdapterScript is Script {
         adapterFactory.whitelist(address(implementation));
         uint64 version = adapterFactory.lastVersion();
 
-        adapter = BridgeFacilitatorAdapter(
-            adapterFactory.create(version, broadcaster, abi.encode(vault, bytes("")))
-        );
+        adapter = BridgeFacilitatorAdapter(adapterFactory.create(version, broadcaster, abi.encode(vault, bytes(""))));
 
         if (offerSigner != address(0)) {
             adapter.setOfferSigner(offerSigner);
         }
-        adapter.setExposureLimits(
-            perRequestMaxCollateral, totalMaxCollateral, minRequestYieldBps, maxConcurrentLoans
-        );
+        adapter.setExposureLimits(perRequestMaxCollateral, totalMaxCollateral, minRequestYieldBps, maxConcurrentLoans);
         vm.stopBroadcast();
 
         console2.log("Deployed BridgeFacilitatorAdapter (proxy):", address(adapter));

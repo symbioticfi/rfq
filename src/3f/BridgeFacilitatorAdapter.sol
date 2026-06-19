@@ -1,25 +1,26 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.28;
 
+import {IWhitelist} from "3f-request-whitelist/src/IWhitelist.sol";
+
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+
 import {Adapter} from "@symbioticfi/core/src/contracts/adapters/Adapter.sol";
 import {IAdapter} from "@symbioticfi/core/src/interfaces/adapters/IAdapter.sol";
 import {IUniversalDelegator} from "@symbioticfi/core/src/interfaces/delegator/IUniversalDelegator.sol";
 import {IVaultV2} from "@symbioticfi/core/src/interfaces/vault/IVaultV2.sol";
 
-import {IRequest} from "grunt/src/interfaces/request/IRequest.sol";
 import {IRequestCallback} from "grunt/src/interfaces/request/IRequestCallback.sol";
+import {IRequest} from "grunt/src/interfaces/request/IRequest.sol";
 import {IVaultController} from "grunt/src/interfaces/request/IVaultController.sol";
 import {Offer} from "grunt/src/interfaces/request/IOfferReceiver.sol";
-import {IWhitelist} from "3f-request-whitelist/src/IWhitelist.sol";
-
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
-import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 /// @title  BridgeFacilitatorAdapter
 /// @notice Symbiotic VaultV2 adapter that participates in 3F (Grunt) bridge-loan auctions as a Bridge
@@ -44,18 +45,24 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
     /* ERRORS */
 
-    /// @notice Request is not currently attested by the 3F whitelist registry.
-    error NotAttested();
-    /// @notice The just-in-time pull came up short (cap `limitOf` reached, or vault liquidity is dry).
-    error InsufficientLiquidity();
     /// @notice The Request's underlying asset does not match the vault asset.
     error AssetMismatch();
+
+    /// @notice The just-in-time pull came up short (cap `limitOf` reached, or vault liquidity is dry).
+    error InsufficientLiquidity();
+
+    /// @notice Request is not currently attested by the 3F whitelist registry.
+    error NotAttested();
+
     /// @notice `principal` exceeds the per-Request collateral cap.
     error PerRequestCapExceeded();
+
     /// @notice Funding this Request would push outstanding collateral past the sleeve cap.
     error SleeveCapExceeded();
+
     /// @notice The adapter already holds the maximum number of concurrent open loans.
     error TooManyConcurrentLoans();
+
     /// @notice The Request's yield is below the minimum required return (in bps of principal).
     error YieldTooLow();
 
@@ -111,27 +118,26 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
     event SetOfferSigner(address indexed signer);
     event SetExposureLimits(
-        uint256 perRequestMaxCollateral, uint256 totalMaxCollateral, uint256 minRequestYieldBps, uint256 maxConcurrentLoans
+        uint256 perRequestMaxCollateral,
+        uint256 totalMaxCollateral,
+        uint256 minRequestYieldBps,
+        uint256 maxConcurrentLoans
     );
     event PositionOpened(address indexed request, uint256 principal, uint256 ytExpected);
     event PositionRedeemed(address indexed request, uint256 principal, uint256 yield);
 
     /* CONSTRUCTOR */
 
-    constructor(
-        address requestWhitelist,
-        address vaultFactory,
-        address adapterFactory
-    ) Adapter(vaultFactory, adapterFactory) {
+    constructor(address requestWhitelist, address vaultFactory, address adapterFactory)
+        Adapter(vaultFactory, adapterFactory)
+    {
         REQUEST_WHITELIST = requestWhitelist;
     }
 
     /* OWNER: AUTHORIZATION */
 
     /// @notice Set the EOA whose signatures the adapter honors under EIP-1271.
-    function setOfferSigner(
-        address signer
-    ) external onlyOwner {
+    function setOfferSigner(address signer) external onlyOwner {
         offerSigner = signer;
         emit SetOfferSigner(signer);
     }
@@ -148,9 +154,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
         totalMaxCollateral = totalMaxCollateral_;
         minRequestYieldBps = minRequestYieldBps_;
         maxConcurrentLoans = maxConcurrentLoans_;
-        emit SetExposureLimits(
-            perRequestMaxCollateral_, totalMaxCollateral_, minRequestYieldBps_, maxConcurrentLoans_
-        );
+        emit SetExposureLimits(perRequestMaxCollateral_, totalMaxCollateral_, minRequestYieldBps_, maxConcurrentLoans_);
     }
 
     /* 3F PULL-MODE CALLBACK */
@@ -193,9 +197,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
     /// @notice Permissionless. Realizes any ready (`canWithdraw()`) Requests via `burnAll`, booking the
     ///         recovered principal as recallable. Unknown / not-yet-ready Requests are skipped, not reverted.
-    function redeem(
-        address[] calldata requests
-    ) external nonReentrant {
+    function redeem(address[] calldata requests) external nonReentrant {
         for (uint256 i; i < requests.length; ++i) {
             address request = requests[i];
             if (!_activeRequests.contains(request)) continue;
@@ -249,9 +251,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     /// @inheritdoc IAdapter
     /// @dev Mirror the recalled amount into `realizedPrincipal` (floored at 0) so it stays an accurate
     ///      count of realized-but-not-yet-recalled principal that the off-chain bot reads.
-    function deallocate(
-        uint256 amount
-    ) public override onlyDelegator returns (uint256 deallocated) {
+    function deallocate(uint256 amount) public override onlyDelegator returns (uint256 deallocated) {
         deallocated = super.deallocate(amount);
         realizedPrincipal = realizedPrincipal.saturatingSub(deallocated);
     }
@@ -259,17 +259,13 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     /* INTERNAL: IAdapter HOOKS */
 
     /// @dev Accounting passthrough for the JIT-pulled collateral; never reverts.
-    function _allocate(
-        uint256 amount
-    ) internal pure override returns (uint256) {
+    function _allocate(uint256 amount) internal pure override returns (uint256) {
         return amount;
     }
 
     /// @dev Principal locked in a live loan is illiquid, so this hook produces nothing beyond the free
     ///      balance the base `deallocate` already recalled (shortfalls are satisfied as loans redeem).
-    function _deallocate(
-        uint256
-    ) internal pure override returns (uint256) {
+    function _deallocate(uint256) internal pure override returns (uint256) {
         return 0;
     }
 
@@ -304,9 +300,7 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
 
     /// @dev Reverts unless `request` is live `Whitelisted` — `PausedWhitelisted` (circuit breaker active)
     ///      and every other state are rejected.
-    function _ensureAttested(
-        address request
-    ) internal view {
+    function _ensureAttested(address request) internal view {
         if (IWhitelist(REQUEST_WHITELIST).isWhitelisted(request) != IWhitelist.WhitelistStatus.Whitelisted) {
             revert NotAttested();
         }
