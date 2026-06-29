@@ -10,12 +10,13 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {BitMaps} from "@openzeppelin/contracts/utils/structs/BitMaps.sol";
 import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 /// @title Reactor
 /// @notice Contract for approved RWA intake, redemption-account routing, and executor invocation.
-contract Reactor is EIP712, IReactor {
+contract Reactor is EIP712, IReactor, ReentrancyGuardTransient {
     using Address for address payable;
     using BitMaps for BitMaps.BitMap;
     using SafeERC20 for IERC20;
@@ -101,7 +102,7 @@ contract Reactor is EIP712, IReactor {
         SwapInput[] memory swapInputs,
         DiscountSwapInput[] memory discountSwapInputs,
         bytes memory executorData
-    ) internal {
+    ) internal nonReentrant {
         if (order.filler != msg.sender) {
             revert InvalidFiller();
         }
