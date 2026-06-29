@@ -8,189 +8,190 @@ Ran 1 test for test/3f/MockWhitelist.t.sol:MockWhitelistTest
 [PASS] test_AttestsKnownAddresses() (gas: 18679)
 
 Ran 5 tests for test/CoreMirrorIntegration.t.sol:LiquidLaneIntegrationTest
-[PASS] testLiquidLaneAdapterHandlesDirectSwapFill() (gas: 451717)
+[PASS] testLiquidLaneAdapterHandlesDirectSwapFill() (gas: 452543)
 [PASS] testLiquidLaneAdapterHandlesLocalSignedSwapSelector() (gas: 221505)
-[PASS] testLiquidLaneAdapterHandlesMixedDirectAndDiscountSwapFill() (gas: 587332)
+[PASS] testLiquidLaneAdapterHandlesMixedDirectAndDiscountSwapFill() (gas: 588158)
 [PASS] testLiquidLaneConstantsMatchMirrorSchema() (gas: 460)
 [PASS] testLocalStructsExposeLiquidLaneFields() (gas: 17014)
 
-Ran 35 tests for test/Reactor.t.sol:ReactorTest
-[PASS] testExecuteRevertsWhenCallerIsNotReactor() (gas: 55282)
-[PASS] testExecuteRunsExecutorCalls() (gas: 121878)
-[PASS] testExecutorRequiresCaller() (gas: 5948210)
-[PASS] testFillApprovesMultipleOutputTokens() (gas: 2575188)
-[PASS] testFillDeliversHigherOrderOutputsThatMeetRequestMinimums() (gas: 378970)
-[PASS] testFillEmitsFillEvent() (gas: 373386)
-[PASS] testFillExecutesDiscountSwapInputsAlongsideDirectSwapInputs() (gas: 515510)
-[PASS] testFillKeepsMaxApproval() (gas: 1592781)
-[PASS] testFillRefundsNativeSurplusToExecutor() (gas: 258209)
-[PASS] testFillRejectsInvalidSwapperRequestSignature() (gas: 122288)
-[PASS] testFillRejectsSignatureAfterOutputMutation() (gas: 197863)
-[PASS] testFillRevertsAndRollsBackIfAdapterFails() (gas: 1260636)
-[PASS] testFillRevertsAndRollsBackIfExecutorCallFails() (gas: 384490)
-[PASS] testFillRevertsAndRollsBackIfExecutorDataIsMalformed() (gas: 365566)
-[PASS] testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() (gas: 150658)
-[PASS] testFillRevertsIfDiscountSwapAdapterIsNotFactoryEntity() (gas: 1087760)
-[PASS] testFillRevertsIfExecutorDoesNotMatchOrderFiller() (gas: 2558033)
-[PASS] testFillRevertsIfOrderOutputAmountIsLessThanRequestOutput() (gas: 161935)
-[PASS] testFillRevertsIfOrderOutputsLengthDoesNotMatchRequestOutputs() (gas: 170456)
-[PASS] testFillRevertsIfOrderOutputsMissRequestOutput() (gas: 173888)
-[PASS] testFillRevertsIfOutputsAreNotSatisfied() (gas: 394332)
-[PASS] testFillRevertsIfRequestIsExpired() (gas: 109728)
-[PASS] testFillRevertsIfRequestNonceAlreadyUsed() (gas: 464914)
-[PASS] testFillRevertsIfRequestNonceWasInvalidated() (gas: 279490)
-[PASS] testFillRevertsIfSwapAdapterIsNotFactoryEntity() (gas: 1073058)
-[PASS] testFillRevertsIfSwapAmountInDoesNotMatchOrderAmountIn() (gas: 120828)
-[PASS] testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() (gas: 1250332)
-[PASS] testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() (gas: 137901)
-[PASS] testFillRevertsIfSwapperHasNotApprovedReactor() (gas: 190200)
-[PASS] testFillRoutesDiscountSwapInputsToTheirAdapters() (gas: 503774)
-[PASS] testFillRoutesSwapInputsToTheirAdapters() (gas: 489036)
-[PASS] testFillTransfersNativeOutputs() (gas: 256964)
-[PASS] testFillTransfersRwaIntoAccountsAndDeliversOutputs() (gas: 487345)
-[PASS] testFillTransfersRwaIntoMultipleAccountsAndDeliversOutputs() (gas: 468540)
-[PASS] testFillUsesRequestProtocol() (gas: 464761)
+Ran 36 tests for test/Reactor.t.sol:ReactorTest
+[PASS] testExecuteRevertsWhenCallerIsNotReactor() (gas: 55304)
+[PASS] testExecuteRunsExecutorCalls() (gas: 121881)
+[PASS] testExecutorRequiresCaller() (gas: 6005314)
+[PASS] testFillApprovesMultipleOutputTokens() (gas: 2576014)
+[PASS] testFillDeliversHigherOrderOutputsThatMeetRequestMinimums() (gas: 379796)
+[PASS] testFillEmitsFillEvent() (gas: 374212)
+[PASS] testFillExecutesDiscountSwapInputsAlongsideDirectSwapInputs() (gas: 516358)
+[PASS] testFillKeepsMaxApproval() (gas: 1594322)
+[PASS] testFillRefundsNativeSurplusToExecutor() (gas: 259013)
+[PASS] testFillRejectsInvalidSwapperRequestSignature() (gas: 122849)
+[PASS] testFillRejectsSignatureAfterOutputMutation() (gas: 198424)
+[PASS] testFillRevertsAndRollsBackIfAdapterFails() (gas: 1261219)
+[PASS] testFillRevertsAndRollsBackIfExecutorCallFails() (gas: 385051)
+[PASS] testFillRevertsAndRollsBackIfExecutorDataIsMalformed() (gas: 366127)
+[PASS] testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() (gas: 151241)
+[PASS] testFillRevertsIfDiscountSwapAdapterIsNotFactoryEntity() (gas: 1088321)
+[PASS] testFillRevertsIfExecutorDoesNotMatchOrderFiller() (gas: 2558822)
+[PASS] testFillRevertsIfNativeRecipientReentersFill() (gas: 1886275)
+[PASS] testFillRevertsIfOrderOutputAmountIsLessThanRequestOutput() (gas: 162408)
+[PASS] testFillRevertsIfOrderOutputsLengthDoesNotMatchRequestOutputs() (gas: 171017)
+[PASS] testFillRevertsIfOrderOutputsMissRequestOutput() (gas: 174471)
+[PASS] testFillRevertsIfOutputsAreNotSatisfied() (gas: 394896)
+[PASS] testFillRevertsIfRequestIsExpired() (gas: 110289)
+[PASS] testFillRevertsIfRequestNonceAlreadyUsed() (gas: 466301)
+[PASS] testFillRevertsIfRequestNonceWasInvalidated() (gas: 280051)
+[PASS] testFillRevertsIfSwapAdapterIsNotFactoryEntity() (gas: 1073664)
+[PASS] testFillRevertsIfSwapAmountInDoesNotMatchOrderAmountIn() (gas: 121389)
+[PASS] testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() (gas: 1250915)
+[PASS] testFillRevertsIfSwapInputsDoNotMatchOrderAmountIn() (gas: 138352)
+[PASS] testFillRevertsIfSwapperHasNotApprovedReactor() (gas: 190783)
+[PASS] testFillRoutesDiscountSwapInputsToTheirAdapters() (gas: 504600)
+[PASS] testFillRoutesSwapInputsToTheirAdapters() (gas: 489862)
+[PASS] testFillTransfersNativeOutputs() (gas: 257768)
+[PASS] testFillTransfersRwaIntoAccountsAndDeliversOutputs() (gas: 488171)
+[PASS] testFillTransfersRwaIntoMultipleAccountsAndDeliversOutputs() (gas: 469366)
+[PASS] testFillUsesRequestProtocol() (gas: 466170)
 
 Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapterTest
 [PASS] test_allocatable_zeroOutsideConsume() (gas: 11082)
-[PASS] test_consume_happyPath_pullsPrincipalJustInTime() (gas: 343775)
-[PASS] test_consume_revertsOnAssetMismatch() (gas: 1714595)
-[PASS] test_consume_revertsWhenCapExceeded() (gas: 166661)
+[PASS] test_consume_happyPath_pullsPrincipalJustInTime() (gas: 343763)
+[PASS] test_consume_revertsOnAssetMismatch() (gas: 1714583)
+[PASS] test_consume_revertsWhenCapExceeded() (gas: 166649)
 [PASS] test_consume_revertsWhenNotAttested() (gas: 72950)
 [PASS] test_consume_revertsWhenPausedWhitelisted() (gas: 82564)
-[PASS] test_consume_revertsWhenPerRequestCapExceeded() (gas: 127776)
-[PASS] test_consume_revertsWhenSleeveCapExceeded() (gas: 1073400)
-[PASS] test_consume_revertsWhenTooManyConcurrentLoans() (gas: 1075103)
-[PASS] test_consume_revertsWhenVaultLiquidityDry() (gas: 159936)
-[PASS] test_consume_revertsWhenYieldTooLow() (gas: 134717)
-[PASS] test_consume_spendsIdleBalanceBeforePulling() (gas: 334880)
-[PASS] test_consume_withinExposureLimits_succeeds() (gas: 373155)
-[PASS] test_consume_yieldExactlyAtFloor_succeeds() (gas: 312826)
-[PASS] test_deallocate_onlyDelegator() (gas: 280208)
-[PASS] test_deallocate_recallsRealizedBalanceToVault() (gas: 568605)
+[PASS] test_consume_revertsWhenPerRequestCapExceeded() (gas: 127773)
+[PASS] test_consume_revertsWhenSleeveCapExceeded() (gas: 1073370)
+[PASS] test_consume_revertsWhenTooManyConcurrentLoans() (gas: 1075070)
+[PASS] test_consume_revertsWhenVaultLiquidityDry() (gas: 159924)
+[PASS] test_consume_revertsWhenYieldTooLow() (gas: 134705)
+[PASS] test_consume_spendsIdleBalanceBeforePulling() (gas: 334868)
+[PASS] test_consume_withinExposureLimits_succeeds() (gas: 373143)
+[PASS] test_consume_yieldExactlyAtFloor_succeeds() (gas: 312814)
+[PASS] test_deallocate_onlyDelegator() (gas: 280196)
+[PASS] test_deallocate_recallsRealizedBalanceToVault() (gas: 568593)
 [PASS] test_isValidSignature_acceptsOfferSigner() (gas: 25391)
 [PASS] test_isValidSignature_rejectsOtherSigner() (gas: 25463)
 [PASS] test_isValidSignature_rejectsWhenSignerUnset() (gas: 44771)
-[PASS] test_redeem_lossScenarioRealizesLessThanPrincipal() (gas: 452006)
-[PASS] test_redeem_realizesReadyPosition() (gas: 530628)
-[PASS] test_redeem_skipsNotReady() (gas: 348439)
+[PASS] test_redeem_lossScenarioRealizesLessThanPrincipal() (gas: 451994)
+[PASS] test_redeem_realizesReadyPosition() (gas: 530616)
+[PASS] test_redeem_skipsNotReady() (gas: 348427)
 [PASS] test_redeem_skipsUnknownRequest() (gas: 71660)
 [PASS] test_setExposureLimits_onlyOwner() (gas: 41932)
 [PASS] test_setExposureLimits_storesValues() (gas: 173546)
 [PASS] test_setOfferSigner_onlyOwner() (gas: 42635)
 
-╭----------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
-| lib/core-mirror/src/contracts/adapters/AdapterFactory.sol:AdapterFactory.test Contract |                 |        |        |        |         |
-+===============================================================================================================================================+
-| Deployment Cost                                                                        | Deployment Size |        |        |        |         |
-|----------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-|                                                                                1957257 |            9294 |        |        |        |         |
-|----------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-|                                                                                        |                 |        |        |        |         |
-|----------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| Function Name                                                                          | Min             | Avg    | Median | Max    | # Calls |
-|----------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| create                                                                                 |          606820 | 606820 | 606820 | 606820 |      26 |
-|----------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| whitelist                                                                              |           95783 |  95783 |  95783 |  95783 |      26 |
-╰----------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
+╭-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
+| lib/core-mirror/src/contracts/adapters/AdapterFactory.sol:AdapterFactory Contract |                 |        |        |        |         |
++==========================================================================================================================================+
+| Deployment Cost                                                                   | Deployment Size |        |        |        |         |
+|-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                                           1957257 |            9294 |        |        |        |         |
+|-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                                                   |                 |        |        |        |         |
+|-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                                                                     | Min             | Avg    | Median | Max    | # Calls |
+|-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| create                                                                            |          606820 | 606820 | 606820 | 606820 |      26 |
+|-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| whitelist                                                                         |           95783 |  95783 |  95783 |  95783 |      26 |
+╰-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
 
-╭----------------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------╮
-| lib/core-mirror/src/contracts/common/MigratableEntityProxy.sol:MigratableEntityProxy.test Contract |                 |       |        |        |         |
-+==========================================================================================================================================================+
-| Deployment Cost                                                                                    | Deployment Size |       |        |        |         |
-|----------------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
-|                                                                                                  0 |            3561 |       |        |        |         |
-|----------------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
-|                                                                                                    |                 |       |        |        |         |
-|----------------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
-| Function Name                                                                                      | Min             | Avg   | Median | Max    | # Calls |
-|----------------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
-| fallback                                                                                           |            1123 | 30869 |  10855 | 129111 |      92 |
-╰----------------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------╯
+╭-----------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------╮
+| lib/core-mirror/src/contracts/common/MigratableEntityProxy.sol:MigratableEntityProxy Contract |                 |       |        |        |         |
++=====================================================================================================================================================+
+| Deployment Cost                                                                               | Deployment Size |       |        |        |         |
+|-----------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
+|                                                                                             0 |            3561 |       |        |        |         |
+|-----------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
+|                                                                                               |                 |       |        |        |         |
+|-----------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
+| Function Name                                                                                 | Min             | Avg   | Median | Max    | # Calls |
+|-----------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
+| fallback                                                                                      |            1123 | 30869 |  10855 | 129111 |      92 |
+╰-----------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------╯
 
-╭----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
-| src/3f/BridgeFacilitatorAdapter.sol:BridgeFacilitatorAdapter.test Contract |                 |        |        |        |         |
-+===================================================================================================================================+
-| Deployment Cost                                                            | Deployment Size |        |        |        |         |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-|                                                                          0 |           15898 |        |        |        |         |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-|                                                                            |                 |        |        |        |         |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| Function Name                                                              | Min             | Avg    | Median | Max    | # Calls |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| FACTORY                                                                    |             419 |    419 |    419 |    419 |      26 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| activeRequests                                                             |            3034 |   4723 |   5568 |   5568 |       3 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| allocatable                                                                |             561 |    584 |    586 |    586 |      14 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| allocate                                                                   |            2028 |   2028 |   2028 |   2028 |      12 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| deallocate                                                                 |            8306 |  16395 |  16395 |  24484 |       2 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| initialize                                                                 |          114938 | 114938 | 114938 | 114938 |      26 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| isValidSignature                                                           |            3093 |   7778 |  10116 |  10126 |       3 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| maxConcurrentLoans                                                         |            2494 |   2494 |   2494 |   2494 |       1 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| minRequestYieldBps                                                         |            2514 |   2514 |   2514 |   2514 |       1 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| onRequestConsumed                                                          |            7186 | 151559 | 242792 | 252372 |      20 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| outstandingPrincipal                                                       |            2515 |   2515 |   2515 |   2515 |       5 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| perRequestMaxCollateral                                                    |            2492 |   2492 |   2492 |   2492 |       1 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| positions                                                                  |            5803 |   5803 |   5803 |   5803 |       2 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| realizedPrincipal                                                          |            2492 |   2492 |   2492 |   2492 |       5 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| redeem                                                                     |           25925 |  88419 | 126365 | 129165 |       5 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| setExposureLimits                                                          |            3563 |  45409 |  34330 |  94030 |       8 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| setOfferSigner                                                             |            3108 |  24743 |  26178 |  26178 |      28 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| totalAssets                                                                |            3421 |   5921 |   5421 |  16421 |      14 |
-|----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| totalMaxCollateral                                                         |            2536 |   2536 |   2536 |   2536 |       1 |
-╰----------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
+╭-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
+| src/3f/BridgeFacilitatorAdapter.sol:BridgeFacilitatorAdapter Contract |                 |        |        |        |         |
++==============================================================================================================================+
+| Deployment Cost                                                       | Deployment Size |        |        |        |         |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                                     0 |           15894 |        |        |        |         |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                                       |                 |        |        |        |         |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                                                         | Min             | Avg    | Median | Max    | # Calls |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| FACTORY                                                               |             419 |    419 |    419 |    419 |      26 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| activeRequests                                                        |            3034 |   4723 |   5568 |   5568 |       3 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| allocatable                                                           |             561 |    584 |    586 |    586 |      14 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| allocate                                                              |            2028 |   2028 |   2028 |   2028 |      12 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| deallocate                                                            |            8306 |  16395 |  16395 |  24484 |       2 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| initialize                                                            |          114938 | 114938 | 114938 | 114938 |      26 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| isValidSignature                                                      |            3093 |   7778 |  10116 |  10126 |       3 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| maxConcurrentLoans                                                    |            2494 |   2494 |   2494 |   2494 |       1 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| minRequestYieldBps                                                    |            2514 |   2514 |   2514 |   2514 |       1 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| onRequestConsumed                                                     |            7186 | 151549 | 242780 | 252360 |      20 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| outstandingPrincipal                                                  |            2515 |   2515 |   2515 |   2515 |       5 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| perRequestMaxCollateral                                               |            2492 |   2492 |   2492 |   2492 |       1 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| positions                                                             |            5803 |   5803 |   5803 |   5803 |       2 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| realizedPrincipal                                                     |            2492 |   2492 |   2492 |   2492 |       5 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| redeem                                                                |           25925 |  88419 | 126365 | 129165 |       5 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setExposureLimits                                                     |            3563 |  45409 |  34330 |  94030 |       8 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setOfferSigner                                                        |            3108 |  24743 |  26178 |  26178 |      28 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| totalAssets                                                           |            3421 |   5921 |   5421 |  16421 |      14 |
+|-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| totalMaxCollateral                                                    |            2536 |   2536 |   2536 |   2536 |       1 |
+╰-----------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
 
-╭------------------------------------------------------+-----------------+-----+--------+-----+---------╮
-| src/3f/MockWhitelist.sol:MockWhitelist.test Contract |                 |     |        |     |         |
-+=======================================================================================================+
-| Deployment Cost                                      | Deployment Size |     |        |     |         |
-|------------------------------------------------------+-----------------+-----+--------+-----+---------|
-|                                                    0 |             462 |     |        |     |         |
-|------------------------------------------------------+-----------------+-----+--------+-----+---------|
-|                                                      |                 |     |        |     |         |
-|------------------------------------------------------+-----------------+-----+--------+-----+---------|
-| Function Name                                        | Min             | Avg | Median | Max | # Calls |
-|------------------------------------------------------+-----------------+-----+--------+-----+---------|
-| isWhitelisted                                        |             713 | 713 |    713 | 713 |       3 |
-╰------------------------------------------------------+-----------------+-----+--------+-----+---------╯
+╭-------------------------------------------------+-----------------+-----+--------+-----+---------╮
+| src/3f/MockWhitelist.sol:MockWhitelist Contract |                 |     |        |     |         |
++==================================================================================================+
+| Deployment Cost                                 | Deployment Size |     |        |     |         |
+|-------------------------------------------------+-----------------+-----+--------+-----+---------|
+|                                               0 |             462 |     |        |     |         |
+|-------------------------------------------------+-----------------+-----+--------+-----+---------|
+|                                                 |                 |     |        |     |         |
+|-------------------------------------------------+-----------------+-----+--------+-----+---------|
+| Function Name                                   | Min             | Avg | Median | Max | # Calls |
+|-------------------------------------------------+-----------------+-----+--------+-----+---------|
+| isWhitelisted                                   |             713 | 713 |    713 | 713 |       3 |
+╰-------------------------------------------------+-----------------+-----+--------+-----+---------╯
 
 ╭---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
 | src/Executor.sol:Executor.test Contract                                                                                                                                                                                                                                                     |                 |        |        |        |         |
 +====================================================================================================================================================================================================================================================================================================================================================+
 | Deployment Cost                                                                                                                                                                                                                                                                             | Deployment Size |        |        |        |         |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-|                                                                                                                                                                                                                                                                                     2412490 |           11959 |        |        |        |         |
+|                                                                                                                                                                                                                                                                                     2412718 |           11960 |        |        |        |         |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 |                                                                                                                                                                                                                                                                                             |                 |        |        |        |         |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 | Function Name                                                                                                                                                                                                                                                                               | Min             | Avg    | Median | Max    | # Calls |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| execute                                                                                                                                                                                                                                                                                     |           27563 |  53528 |  53528 |  79494 |       2 |
+| execute                                                                                                                                                                                                                                                                                     |           27563 |  53530 |  53530 |  79497 |       2 |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address,(address,uint256,address)[]),bytes,(address,(address,address,uint256,uint256)),bytes)                                                                                                     |           33894 | 167690 | 165024 | 381061 |      31 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address,(address,uint256,address)[]),bytes,(address,(address,address,uint256,uint256)),bytes)                                                                                                     |           33894 | 173557 | 169081 | 381887 |      32 |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address,(address,uint256,address)[]),bytes,(address,(address,address,uint256,uint256))[],(address,((address,uint256,address,address,uint256,uint48),bytes,uint48),bytes,address,uint256)[],bytes) |           90601 | 272038 | 356429 | 444108 |       5 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address,(address,uint256,address)[]),bytes,(address,(address,address,uint256,uint256))[],(address,((address,uint256,address,address,uint256,uint48),bytes,uint48),bytes,address,uint256)[],bytes) |           91162 | 272758 | 357255 | 444934 |       5 |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address,(address,uint256,address)[]),bytes,(address,(address,address,uint256,uint256))[],bytes)                                                                                                   |           89068 | 256976 | 340931 | 340931 |       3 |
+| fill(((address,uint256,(address,uint256,address)[],uint256,uint256,address),bytes,address,address,(address,uint256,address)[]),bytes,(address,(address,address,uint256,uint256))[],bytes)                                                                                                   |           89629 | 257714 | 341757 | 341757 |       3 |
 |---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 | setCallers                                                                                                                                                                                                                                                                                  |           71478 |  71478 |  71478 |  71478 |       1 |
 ╰---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
@@ -200,7 +201,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 +============================================================================================+
 | Deployment Cost                       | Deployment Size |       |        |       |         |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-|                               2957229 |           15456 |       |        |       |         |
+|                               3013168 |           15716 |       |        |       |         |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
 |                                       |                 |       |        |       |         |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
@@ -232,7 +233,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 +====================================================================================================================+
 | Deployment Cost                                             | Deployment Size |        |        |        |         |
 |-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-|                                                      625723 |            2842 |        |        |        |         |
+|                                                      625711 |            2842 |        |        |        |         |
 |-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 |                                                             |                 |        |        |        |         |
 |-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
@@ -242,7 +243,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 |-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 | canWithdraw                                                 |            2538 |   2538 |   2538 |   2538 |       4 |
 |-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
-| consume                                                     |           39005 | 177586 | 270257 | 272287 |      20 |
+| consume                                                     |           39005 | 177576 | 270245 | 272275 |      20 |
 |-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
 | fundRedemption                                              |           46268 |  59558 |  66204 |  66204 |       3 |
 |-------------------------------------------------------------+-----------------+--------+--------+--------+---------|
@@ -270,7 +271,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 +==================================================================================================================+
 | Deployment Cost                                             | Deployment Size |       |        |       |         |
 |-------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-|                                                      477865 |            2161 |       |        |       |         |
+|                                                      477853 |            2161 |       |        |       |         |
 |-------------------------------------------------------------+-----------------+-------+--------+-------+---------|
 |                                                             |                 |       |        |       |         |
 |-------------------------------------------------------------+-----------------+-------+--------+-------+---------|
@@ -324,7 +325,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 +==========================================================================================================================+
 | Deployment Cost                                                     | Deployment Size |       |        |       |         |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
-|                                                              181487 |             621 |       |        |       |         |
+|                                                              181475 |             621 |       |        |       |         |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
 |                                                                     |                 |       |        |       |         |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
@@ -394,7 +395,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
 | discountSwapCount                       |            2425 |  2425 |   2425 |  2425 |       4 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
-| setAccount                              |           45335 | 45340 |  45335 | 45347 |      73 |
+| setAccount                              |           45335 | 45340 |  45335 | 45347 |      75 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
 | signedSwapCount                         |            2426 |  2426 |   2426 |  2426 |       2 |
 |-----------------------------------------+-----------------+-------+--------+-------+---------|
@@ -412,9 +413,9 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
 | Function Name                                  | Min             | Avg   | Median | Max   | # Calls |
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
-| isEntity                                       |             810 |  2695 |   2810 |  2810 |      35 |
+| isEntity                                       |             810 |  2698 |   2810 |  2810 |      36 |
 |------------------------------------------------+-----------------+-------+--------+-------+---------|
-| setEntity                                      |           44438 | 44449 |  44450 | 44450 |      71 |
+| setEntity                                      |           44438 | 44449 |  44450 | 44450 |      73 |
 ╰------------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭-----------------------------------------------+-----------------+-------+--------+-------+---------╮
@@ -466,9 +467,23 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 |---------------------------------------+-----------------+-------+--------+-------+---------|
 | allowance                             |            1223 |  3056 |   3223 |  3223 |      12 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| approve                               |           24944 | 46641 |  47228 | 47240 |      38 |
+| approve                               |           24944 | 46656 |  47228 | 47240 |      39 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| balanceOf                             |             850 |  2275 |   2850 |  2850 |      80 |
+| balanceOf                             |             850 |  2257 |   2850 |  2850 |      81 |
 |---------------------------------------+-----------------+-------+--------+-------+---------|
-| mint                                  |           68911 | 68930 |  68935 | 68935 |      52 |
+| mint                                  |           68911 | 68930 |  68935 | 68935 |      53 |
 ╰---------------------------------------+-----------------+-------+--------+-------+---------╯
+
+╭------------------------------------------------------+-----------------+--------+--------+--------+---------╮
+| test/Reactor.t.sol:ReentrantNativeRecipient Contract |                 |        |        |        |         |
++=============================================================================================================+
+| Deployment Cost                                      | Deployment Size |        |        |        |         |
+|------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                               839609 |            3935 |        |        |        |         |
+|------------------------------------------------------+-----------------+--------+--------+--------+---------|
+|                                                      |                 |        |        |        |         |
+|------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| Function Name                                        | Min             | Avg    | Median | Max    | # Calls |
+|------------------------------------------------------+-----------------+--------+--------+--------+---------|
+| setReentry                                           |          603188 | 603188 | 603188 | 603188 |       1 |
+╰------------------------------------------------------+-----------------+--------+--------+--------+---------╯
