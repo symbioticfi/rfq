@@ -10,6 +10,7 @@ import {IReactor, NATIVE, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} fro
 
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -331,6 +332,45 @@ contract ReactorTest is Test {
 
         assertEq(swapper.balance, balanceBefore + 2 ether);
         assertEq(address(executor).balance, 1 ether);
+        assertEq(address(reactor).balance, 0);
+    }
+
+    function testFillRevertsIfNativeRecipientReentersFill() public {
+        ReentrantNativeRecipient recipient = new ReentrantNativeRecipient(reactor);
+        vm.deal(address(executor), 3 ether);
+
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: NATIVE, amount: 2 ether, recipient: address(recipient)});
+
+        IExecutor.Call[] memory calls = new IExecutor.Call[](0);
+        IReactor.SwapInput memory swap = _swapInput(vault0, 5 ether, 5 ether);
+
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory protocolSignature = _signOrder(order);
+
+        IReactor.Output[] memory reentrantOutputs = new IReactor.Output[](0);
+        IReactor.Order memory reentrantOrder = _order(reentrantOutputs, 0, address(recipient));
+        reentrantOrder.request.nonce = 2;
+        reentrantOrder.swapperSignature = _signRequest(reentrantOrder.request);
+        recipient.setReentry(
+            abi.encodeCall(
+                IReactorFullFill.fill,
+                (
+                    reentrantOrder,
+                    _signOrder(reentrantOrder),
+                    new IReactor.SwapInput[](0),
+                    new IReactor.DiscountSwapInput[](0),
+                    abi.encode(calls)
+                )
+            )
+        );
+
+        vm.expectRevert(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector);
+        vm.prank(filler);
+        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+
+        assertEq(address(recipient).balance, 0);
+        assertEq(address(executor).balance, 3 ether);
         assertEq(address(reactor).balance, 0);
     }
 
@@ -1143,5 +1183,68 @@ contract MockCallTarget {
 
     function revertAlways() public pure {
         revert("call failed");
+    }
+}
+
+interface IReactorFullFill {
+    function fill(
+        IReactor.Order calldata order,
+        bytes calldata protocolSignature,
+        IReactor.SwapInput[] calldata swapInputs,
+        IReactor.DiscountSwapInput[] calldata discountSwapInputs,
+        bytes calldata executorData
+    ) external;
+}
+
+contract ReentrantNativeRecipient is IExecutor {
+    Reactor internal immutable _reactor;
+    bytes internal _reentryCalldata;
+    bool internal _entered;
+
+    constructor(Reactor reactor_) {
+        _reactor = reactor_;
+    }
+
+    function setReentry(bytes memory reentryCalldata) public {
+        _reentryCalldata = reentryCalldata;
+    }
+
+    function execute(
+        IReactor.Order calldata,
+        IReactor.SwapInput[] calldata,
+        IReactor.DiscountSwapInput[] calldata,
+        bytes calldata
+    ) public {}
+
+    function fill(IReactor.Order calldata, bytes calldata, IReactor.SwapInput calldata, bytes calldata) external {}
+
+    function fill(IReactor.Order calldata, bytes calldata, IReactor.SwapInput[] calldata, bytes calldata) external {}
+
+    function fill(
+        IReactor.Order calldata,
+        bytes calldata,
+        IReactor.SwapInput[] calldata,
+        IReactor.DiscountSwapInput[] calldata,
+        bytes calldata
+    ) external {}
+
+    function setCallers(address[] calldata) external {}
+
+    function callers(uint256) external pure returns (address) {
+        return address(0);
+    }
+
+    receive() external payable {
+        if (_entered) {
+            return;
+        }
+        _entered = true;
+
+        (bool success, bytes memory returndata) = address(_reactor).call(_reentryCalldata);
+        if (!success) {
+            assembly ("memory-safe") {
+                revert(add(returndata, 0x20), mload(returndata))
+            }
+        }
     }
 }

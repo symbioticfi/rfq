@@ -117,7 +117,7 @@ contract Executor is Ownable, IExecutor {
         }
 
         uint256 balance = address(this).balance;
-        if (balance != 0) {
+        if (balance > 0) {
             payable(REACTOR).sendValue(balance);
         }
     }
