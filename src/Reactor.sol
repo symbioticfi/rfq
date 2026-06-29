@@ -181,7 +181,7 @@ contract Reactor is EIP712, IReactor {
         }
 
         uint256 balance = address(this).balance;
-        if (balance != 0) {
+        if (balance > 0) {
             payable(msg.sender).sendValue(balance);
         }
 

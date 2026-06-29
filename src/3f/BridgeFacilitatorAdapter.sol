@@ -281,19 +281,19 @@ contract BridgeFacilitatorAdapter is Adapter, IRequestCallback, IERC1271 {
     ///      amount about to be minted; the minimum-return floor requires `yield/principal >= bps/1e4`.
     function _enforceExposure(uint256 principal, uint256 yield) internal view {
         uint256 perRequest = perRequestMaxCollateral;
-        if (perRequest != 0 && principal > perRequest) {
+        if (perRequest > 0 && principal > perRequest) {
             revert PerRequestCapExceeded();
         }
         uint256 total = totalMaxCollateral;
-        if (total != 0 && outstandingPrincipal + principal > total) {
+        if (total > 0 && outstandingPrincipal + principal > total) {
             revert SleeveCapExceeded();
         }
         uint256 maxLoans = maxConcurrentLoans;
-        if (maxLoans != 0 && _activeRequests.length() >= maxLoans) {
+        if (maxLoans > 0 && _activeRequests.length() >= maxLoans) {
             revert TooManyConcurrentLoans();
         }
         uint256 minYield = minRequestYieldBps;
-        if (minYield != 0 && yield * _BPS < principal * minYield) {
+        if (minYield > 0 && yield * _BPS < principal * minYield) {
             revert YieldTooLow();
         }
     }
