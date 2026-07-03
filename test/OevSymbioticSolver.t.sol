@@ -32,7 +32,11 @@ contract OevSymbioticSolverTest is Test {
         uint256 code,
         uint256 seizedAssets,
         uint256 repaidAssets,
-        uint256 profitLoan
+        uint256 profitLoan,
+        uint256 gasUsed
+    );
+    event BundleResult(
+        bytes32 indexed auctionKey, uint256 totalProfitLoan, uint256 minProfitLoan, uint256 gasUsed, bool bidAuthorized
     );
     event PayBidResult(bytes32 indexed auctionKey, uint256 bidAmount, bool paid);
 
@@ -78,24 +82,49 @@ contract OevSymbioticSolverTest is Test {
         assertEq(executor.balance, beforeBalance);
     }
 
-    function testAuthorizedLiquidatePaysBidEvenWhenLegSkips() public {
+    function testConstructorRejectsZeroDependencies() public {
+        vm.expectRevert(SymbioticOevSolver.ZeroAddress.selector);
+        new SymbioticOevSolver(address(0), address(morpho), address(adapter), authSigner, owner);
+
+        vm.expectRevert(SymbioticOevSolver.ZeroAddress.selector);
+        new SymbioticOevSolver(executor, address(0), address(adapter), authSigner, owner);
+
+        vm.expectRevert(SymbioticOevSolver.ZeroAddress.selector);
+        new SymbioticOevSolver(executor, address(morpho), address(0), authSigner, owner);
+
+        vm.expectRevert(SymbioticOevSolver.ZeroAddress.selector);
+        new SymbioticOevSolver(executor, address(morpho), address(adapter), address(0), owner);
+
+        vm.expectRevert(SymbioticOevSolver.ZeroAddress.selector);
+        new SymbioticOevSolver(executor, address(morpho), address(adapter), authSigner, address(0));
+    }
+
+    function testTransferOwnershipRejectsZeroAddress() public {
+        vm.expectRevert(SymbioticOevSolver.ZeroAddress.selector);
+        vm.prank(owner);
+        solver.transferOwnership(address(0));
+    }
+
+    function testUnprofitableBundleDoesNotAuthorizeBid() public {
         address borrower = makeAddr("borrower");
         _position(borrower, 100e18, 100e18);
         bytes32 auctionKey = keccak256("auction-skip");
 
         SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](1);
-        legs[0] = _leg(borrower, 0, 250_000);
+        legs[0] = _legWithMaxAssets(borrower, 100e18, 60e18, 1);
 
+        vm.expectEmit(true, false, false, false, address(solver));
+        emit BundleResult(auctionKey, 0, 0, 0, false);
         vm.prank(executor);
-        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, legs));
+        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, 100e18, legs));
 
         uint256 beforeBalance = executor.balance;
         vm.expectEmit(true, true, true, true, address(solver));
-        emit PayBidResult(auctionKey, 0.1 ether, true);
+        emit PayBidResult(bytes32(0), 0.1 ether, false);
         vm.prank(executor);
         solver.payBid(0.1 ether);
 
-        assertEq(executor.balance - beforeBalance, 0.1 ether);
+        assertEq(executor.balance, beforeBalance);
     }
 
     function testAuctionKeyCannotReplayAuthorization() public {
@@ -104,8 +133,8 @@ contract OevSymbioticSolverTest is Test {
         bytes32 auctionKey = keccak256("auction-replay");
 
         SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](1);
-        legs[0] = _leg(borrower, 0, 250_000);
-        bytes memory opData = _opData(auctionKey, 0.1 ether, legs);
+        legs[0] = _legWithMaxAssets(borrower, 100e18, 60e18, 1);
+        bytes memory opData = _opData(auctionKey, 0.1 ether, 1, legs);
 
         vm.prank(executor);
         solver.liquidate(0.1 ether, authSigner, opData);
@@ -113,40 +142,6 @@ contract OevSymbioticSolverTest is Test {
         vm.expectRevert(SymbioticOevSolver.InvalidAuth.selector);
         vm.prank(executor);
         solver.liquidate(0.1 ether, authSigner, opData);
-    }
-
-    function testAdapterLiquidityReducesSeizeBeforeMorphoCall() public {
-        address borrower = makeAddr("borrower");
-        _position(borrower, 100e18, 100e18);
-        adapter.setMaxAssets(40e18);
-        bytes32 auctionKey = keccak256("auction-reduce");
-
-        SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](1);
-        legs[0] = _leg(borrower, 100e18, 1);
-
-        vm.prank(executor);
-        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, legs));
-
-        Position memory p = morpho.position(marketId, borrower);
-        assertEq(p.collateral, 60e18);
-    }
-
-    function testUnprofitableLegSkipsBeforeMorphoCall() public {
-        address borrower = makeAddr("borrower");
-        _position(borrower, 100e18, 100e18);
-        adapter.setMaxAssets(0);
-        bytes32 auctionKey = keccak256("auction-unprofitable");
-
-        SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](1);
-        legs[0] = _leg(borrower, 100e18, 250_000);
-
-        vm.expectEmit(true, true, true, true, address(solver));
-        emit LegResult(auctionKey, marketId, borrower, _code(0, 2, 4, bytes4(0)), 0, 0, 0);
-        vm.prank(executor);
-        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, legs));
-
-        Position memory p = morpho.position(marketId, borrower);
-        assertEq(p.collateral, 100e18);
     }
 
     function testRevertedLegDoesNotBlockLaterLeg() public {
@@ -162,8 +157,119 @@ contract OevSymbioticSolverTest is Test {
         legs[1] = _leg(good, 100e18, 1);
 
         vm.prank(executor);
-        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, legs));
+        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, 1, legs));
 
+        assertEq(morpho.position(marketId, bad).collateral, 100e18);
+        assertEq(morpho.position(marketId, good).collateral, 0);
+    }
+
+    function testLiquidatesUsingActualMorphoRepaidAssets() public {
+        address borrower = makeAddr("borrower");
+        _position(borrower, 100e18, 100e18);
+        bytes32 auctionKey = keccak256("auction-no-preview");
+
+        SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](1);
+        legs[0] = _leg(borrower, 100e18, 1);
+
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, 1, legs));
+
+        Position memory p = morpho.position(marketId, borrower);
+        assertEq(p.collateral, 0);
+        assertEq(p.borrowShares, 50e18);
+    }
+
+    function testUnprofitableCallbackRevertDoesNotAuthorizeBid() public {
+        address borrower = makeAddr("borrower");
+        _position(borrower, 100e18, 100e18);
+        adapter.setRate(0.5e18);
+        bytes32 auctionKey = keccak256("auction-no-preview-loss");
+
+        SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](1);
+        legs[0] = _leg(borrower, 100e18, 1);
+
+        vm.expectEmit(true, false, false, false, address(solver));
+        emit BundleResult(auctionKey, 0, 0, 0, false);
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, 1, legs));
+
+        Position memory p = morpho.position(marketId, borrower);
+        assertEq(p.collateral, 100e18);
+
+        uint256 beforeBalance = executor.balance;
+        vm.expectEmit(true, true, true, true, address(solver));
+        emit PayBidResult(bytes32(0), 0.1 ether, false);
+        vm.prank(executor);
+        solver.payBid(0.1 ether);
+        assertEq(executor.balance, beforeBalance);
+        assertEq(adapter.swapCalls(), 0);
+    }
+
+    function testSkipsLegBeforeSwapWhenQuoteCannotCoverRepayAndMinProfit() public {
+        address bad = makeAddr("bad");
+        address goodA = makeAddr("goodA");
+        address goodB = makeAddr("goodB");
+        _position(bad, 100e18, 100e18);
+        _position(goodA, 100e18, 100e18);
+        _position(goodB, 100e18, 100e18);
+        bytes32 auctionKey = keccak256("auction-pre-swap-skip");
+
+        SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](3);
+        legs[0] = _leg(bad, 100e18, 51e18);
+        legs[1] = _leg(goodA, 100e18, 1);
+        legs[2] = _leg(goodB, 100e18, 1);
+
+        vm.expectEmit(true, true, true, false, address(solver));
+        emit LegResult(
+            auctionKey, marketId, bad, _code(0, 2, 1, SymbioticOevSolver.SwapOutputBelowMin.selector), 0, 0, 0, 0
+        );
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, 1, legs));
+
+        assertEq(adapter.swapCalls(), 2);
+        assertEq(morpho.position(marketId, bad).collateral, 100e18);
+        assertEq(morpho.position(marketId, goodA).collateral, 0);
+        assertEq(morpho.position(marketId, goodB).collateral, 0);
+    }
+
+    function testCapsSwapOutputByAdapterLiquidity() public {
+        address borrower = makeAddr("borrower");
+        _position(borrower, 100e18, 100e18);
+        adapter.setMaxAssets(60e18);
+        bytes32 auctionKey = keccak256("auction-liquidity-cap");
+
+        SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](1);
+        legs[0] = _legWithMaxAssets(borrower, 100e18, 60e18, 1);
+
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, 1, legs));
+
+        assertEq(adapter.lastAmountOut(), 60e18);
+        assertEq(morpho.position(marketId, borrower).collateral, 0);
+    }
+
+    function testSkippedLegDoesNotDoubleCountBundleGasFloor() public {
+        address bad = makeAddr("bad");
+        address good = makeAddr("good");
+        _position(bad, 100e18, 100e18);
+        _position(good, 100e18, 100e18);
+        morpho.setRevertBorrower(bad, true);
+        bytes32 auctionKey = keccak256("auction-revert-penalty");
+
+        SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](2);
+        legs[0] = _leg(bad, 100e18, 90e18);
+        legs[1] = _leg(good, 100e18, 1);
+
+        vm.expectEmit(true, false, false, false, address(solver));
+        emit BundleResult(auctionKey, 0, 1, 0, true);
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, _opData(auctionKey, 0.1 ether, 1, legs));
+
+        uint256 beforeBalance = executor.balance;
+        vm.prank(executor);
+        solver.payBid(0.1 ether);
+
+        assertEq(executor.balance - beforeBalance, 0.1 ether);
         assertEq(morpho.position(marketId, bad).collateral, 100e18);
         assertEq(morpho.position(marketId, good).collateral, 0);
     }
@@ -174,23 +280,37 @@ contract OevSymbioticSolverTest is Test {
         );
     }
 
-    function _leg(address borrower, uint256 maxSeizeAssets, uint32 gasUnits)
+    function _leg(address borrower, uint256 maxSeizeAssets, uint256 minProfit)
+        internal
+        view
+        returns (SymbioticOevSolver.LiquidationLeg memory)
+    {
+        return _legWithMaxAssets(borrower, maxSeizeAssets, type(uint256).max, minProfit);
+    }
+
+    function _legWithMaxAssets(address borrower, uint256 maxSeizeAssets, uint256 maxAssets, uint256 minProfit)
         internal
         view
         returns (SymbioticOevSolver.LiquidationLeg memory)
     {
         return SymbioticOevSolver.LiquidationLeg({
-            marketId: marketId, borrower: borrower, maxSeizeAssets: maxSeizeAssets, gasUnits: gasUnits
+            marketId: marketId,
+            borrower: borrower,
+            maxSeizeAssets: maxSeizeAssets,
+            maxAssets: maxAssets,
+            minProfit: minProfit
         });
     }
 
-    function _opData(bytes32 auctionKey, uint256 bidAmount, SymbioticOevSolver.LiquidationLeg[] memory legs)
-        internal
-        view
-        returns (bytes memory)
-    {
-        SymbioticOevSolver.Auth memory auth =
-            SymbioticOevSolver.Auth({auctionKey: auctionKey, bidAmount: bidAmount, loanPerEth: 2500e6});
+    function _opData(
+        bytes32 auctionKey,
+        uint256 bidAmount,
+        uint256 minBundleProfit,
+        SymbioticOevSolver.LiquidationLeg[] memory legs
+    ) internal view returns (bytes memory) {
+        SymbioticOevSolver.Auth memory auth = SymbioticOevSolver.Auth({
+            auctionKey: auctionKey, bidAmount: bidAmount, minBundleProfit: minBundleProfit
+        });
         bytes32 digest = keccak256(
             abi.encode(
                 AUTH_DOMAIN,
@@ -199,7 +319,7 @@ contract OevSymbioticSolverTest is Test {
                 executor,
                 auth.auctionKey,
                 auth.bidAmount,
-                auth.loanPerEth,
+                auth.minBundleProfit,
                 keccak256(abi.encode(legs))
             )
         );
@@ -286,6 +406,8 @@ contract MockAdapter {
     uint256 internal maxAssets = type(uint256).max;
     uint256 internal discount;
     uint256 internal rate = 1e18;
+    uint256 internal swapCalls_;
+    uint256 internal lastAmountOut_;
 
     constructor(TestToken loan_) {
         loan = loan_;
@@ -303,6 +425,14 @@ contract MockAdapter {
         discount = discount_;
     }
 
+    function swapCalls() external view returns (uint256) {
+        return swapCalls_;
+    }
+
+    function lastAmountOut() external view returns (uint256) {
+        return lastAmountOut_;
+    }
+
     function minDiscount(address) external view returns (uint256) {
         return discount;
     }
@@ -317,6 +447,8 @@ contract MockAdapter {
 
     function swap(ILiquidLaneAdapter.Swap calldata swap_) external {
         require(swap_.amountOut <= maxAssets, "max");
+        ++swapCalls_;
+        lastAmountOut_ = swap_.amountOut;
         loan.transfer(swap_.recipient, swap_.amountOut);
     }
 
