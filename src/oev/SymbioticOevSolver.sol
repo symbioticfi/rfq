@@ -4,17 +4,18 @@ pragma solidity 0.8.28;
 
 import {DISCOUNT_PRECISION, ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {IOperationCallback} from "./interfaces/IOperationCallback.sol";
-import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams} from "./interfaces/IMorpho.sol";
+import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams, Position} from "./interfaces/IMorpho.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 interface IOevLiquidLaneAdapter is ILiquidLaneAdapter {
     function minDiscount(address tokenToRedeem) external view returns (uint256 ppm);
     function getAmountOut(address tokenToRedeem, uint256 amountIn) external view returns (uint256 amountOut);
+    function getMaxAssets(address tokenToRedeem) external returns (uint256 assets);
 }
 
 /// @title SymbioticOevSolver
@@ -48,6 +49,7 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
     uint8 internal constant REASON_INSUFFICIENT_LOAN_PROCEEDS = 2;
     uint8 internal constant REASON_PROFIT_BELOW_MIN = 3;
     uint8 internal constant REASON_MORPHO_REVERT = 4;
+    uint8 internal constant REASON_NO_COLLATERAL = 5;
 
     /* IMMUTABLES */
 
@@ -65,11 +67,11 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
     address public owner;
     mapping(bytes32 auctionKey => bool used) public usedAuctionKey;
 
-    bytes32 private payBidAuctionKey;
-    uint256 private authorizedBidAmount;
-    bool private payBidReady;
+    bytes32 private transient payBidAuctionKey;
+    uint256 private transient authorizedBidAmount;
+    bool private transient payBidReady;
 
-    uint256 private lastLegProfit;
+    uint256 private transient lastLegProfit;
 
     /* EVENTS */
 
@@ -101,13 +103,13 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         bytes32 auctionKey;
         uint256 bidAmount;
         uint256 minBundleProfit;
+        uint256 deadline;
     }
 
     struct LiquidationLeg {
         Id marketId;
         address borrower;
         uint256 maxSeizeAssets;
-        uint256 maxAssets;
         uint256 minProfit;
     }
 
@@ -115,7 +117,6 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         address loanToken;
         address collateralToken;
         uint256 seizedAssets;
-        uint256 maxAssets;
         uint256 minProfit;
     }
 
@@ -170,7 +171,9 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         payBidAuctionKey = bytes32(0);
         usedAuctionKey[op.auth.auctionKey] = true;
         uint256 totalProfit = _settleLegs(op.auth.auctionKey, op.legs);
-        bool bidAuthorized = totalProfit >= op.auth.minBundleProfit;
+        // Intentionally authorize the bid only if the settled bundle clears the signed floor. This protects
+        // against callback/accounting bugs; operators can reconcile partner bids manually if needed.
+        bool bidAuthorized = totalProfit >= op.auth.minBundleProfit && address(this).balance >= bidAmount;
         emit BundleResult(op.auth.auctionKey, totalProfit, op.auth.minBundleProfit, startGas - gasleft(), bidAuthorized);
         if (!bidAuthorized) return;
 
@@ -193,8 +196,7 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         }
 
         (bool ok,) = payable(msg.sender).call{value: bidAmount}("");
-        if (!ok) revert TransferFailed();
-        emit PayBidResult(auctionKey, bidAmount, true);
+        emit PayBidResult(auctionKey, bidAmount, ok);
     }
 
     /* IMorphoLiquidateCallback */
@@ -254,12 +256,15 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
     /* INTERNAL */
 
     function _authorize(OperationData memory op, uint256 bidAmount) internal view {
-        if (op.auth.bidAmount != bidAmount || op.auth.minBundleProfit == 0 || usedAuctionKey[op.auth.auctionKey]) {
+        if (
+            op.auth.bidAmount != bidAmount || op.auth.minBundleProfit == 0 || block.timestamp > op.auth.deadline
+                || usedAuctionKey[op.auth.auctionKey]
+        ) {
             revert InvalidAuth();
         }
         bytes32 legsHash = keccak256(abi.encode(op.legs));
         bytes32 digest = _authDigest(op.auth, legsHash);
-        if (ECDSA.recover(digest, op.authSig) != AUTH_SIGNER) revert InvalidAuth();
+        if (!SignatureChecker.isValidSignatureNow(AUTH_SIGNER, digest, op.authSig)) revert InvalidAuth();
     }
 
     function _authDigest(Auth memory auth, bytes32 legsHash) internal view returns (bytes32) {
@@ -272,6 +277,7 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
                 auth.auctionKey,
                 auth.bidAmount,
                 auth.minBundleProfit,
+                auth.deadline,
                 legsHash
             )
         );
@@ -298,17 +304,25 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
 
     function _runLeg(LiquidationLeg memory leg, uint256 index) internal returns (LegOutcome memory outcome) {
         MarketParams memory params = IMorpho(MORPHO).idToMarketParams(leg.marketId);
+        uint256 seizeAssets = _clampedSeizeAssets(leg);
+        if (seizeAssets == 0) {
+            return LegOutcome({
+                code: _code(index, STATUS_SKIPPED, REASON_NO_COLLATERAL, bytes4(0)),
+                seizedAssets: 0,
+                repaidAssets: 0,
+                profitLoan: 0
+            });
+        }
         lastLegProfit = 0;
         bytes memory cbData = abi.encode(
             CallbackContext({
                 loanToken: params.loanToken,
                 collateralToken: params.collateralToken,
-                seizedAssets: leg.maxSeizeAssets,
-                maxAssets: leg.maxAssets,
+                seizedAssets: seizeAssets,
                 minProfit: leg.minProfit
             })
         );
-        try IMorpho(MORPHO).liquidate(params, leg.borrower, leg.maxSeizeAssets, 0, cbData) returns (
+        try IMorpho(MORPHO).liquidate(params, leg.borrower, seizeAssets, 0, cbData) returns (
             uint256 seizedAssets, uint256 repaidAssets
         ) {
             return LegOutcome({
@@ -325,9 +339,18 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         }
     }
 
-    function _adapterOut(CallbackContext memory ctx) internal view returns (uint256 amountOut) {
+    function _clampedSeizeAssets(LiquidationLeg memory leg) internal view returns (uint256) {
+        Position memory current = IMorpho(MORPHO).position(leg.marketId, leg.borrower);
+        // Cheap compromise: clamp by live collateral so a stale signed exact seize can still partially fill
+        // after another liquidation. This is intentionally not full Morpho debt replay; over-repay and health
+        // drift are still left to Morpho and caught fail-soft by the leg try/catch.
+        return Math.min(leg.maxSeizeAssets, current.collateral);
+    }
+
+    function _adapterOut(CallbackContext memory ctx) internal returns (uint256 amountOut) {
         uint256 rateOut = _adapterRateOut(ctx.collateralToken, ctx.seizedAssets);
-        return Math.min(rateOut, ctx.maxAssets);
+        uint256 maxAssets = IOevLiquidLaneAdapter(LIQUID_LANE_ADAPTER).getMaxAssets(ctx.collateralToken);
+        return Math.min(rateOut, maxAssets);
     }
 
     function _adapterRateOut(address collateralToken, uint256 seizedAssets) internal view returns (uint256 amountOut) {
