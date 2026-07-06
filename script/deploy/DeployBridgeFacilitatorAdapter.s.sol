@@ -12,49 +12,46 @@ import {BridgeFacilitatorAdapter} from "../../src/3f/BridgeFacilitatorAdapter.so
 // proxy owned by the broadcaster. The `Adapter` base disables initializers in its constructor, so the
 // live adapter must be a factory-created proxy, not a directly-initialized contract.
 //
-// Required env (addresses):
-//   VAULT             Symbiotic VaultV2 (ERC4626) this adapter sources collateral from
-//   REQUEST_WHITELIST 3F RequestWhitelist (use the MockWhitelist address on testnets)
-//   VAULT_FACTORY     Symbiotic vault factory/registry (validates the vault at initialize)
-// Optional env:
-//   OFFER_SIGNER             EOA whose signatures the adapter accepts via EIP-1271; when set,
-//                            setOfferSigner is called in the same broadcast.
-//   Exposure limits (each defaults to 0 = disabled), set via setExposureLimits in the same broadcast:
-//   PER_REQUEST_MAX_COLLATERAL  max collateral per single Request (collateral decimals), e.g. 100000
-//   TOTAL_MAX_COLLATERAL        max total outstanding collateral across loans,            e.g. 500000
-//   MIN_REQUEST_YIELD_BPS       minimum Request yield in bps of principal,                e.g. 100
-//   MAX_CONCURRENT_LOANS        max concurrent open loans,                                e.g. 10
-//
 // forge script script/deploy/DeployBridgeFacilitatorAdapter.s.sol:DeployBridgeFacilitatorAdapterScript \
-//   --rpc-url sepolia --private-key $SOLVER_PRIVATE_KEY --broadcast
+//   --rpc-url=RPC --broadcast
 contract DeployBridgeFacilitatorAdapterScript is Script {
-    function run() public returns (BridgeFacilitatorAdapter adapter) {
-        address vault = vm.envAddress("VAULT");
-        address requestWhitelist = vm.envAddress("REQUEST_WHITELIST");
-        address vaultFactory = vm.envAddress("VAULT_FACTORY");
-        address offerSigner = vm.envOr("OFFER_SIGNER", address(0));
-        uint256 perRequestMaxCollateral = vm.envOr("PER_REQUEST_MAX_COLLATERAL", uint256(0));
-        uint256 totalMaxCollateral = vm.envOr("TOTAL_MAX_COLLATERAL", uint256(0));
-        uint256 minRequestYieldBps = vm.envOr("MIN_REQUEST_YIELD_BPS", uint256(0));
-        uint256 maxConcurrentLoans = vm.envOr("MAX_CONCURRENT_LOANS", uint256(0));
+    // Configurations - UPDATE THESE BEFORE DEPLOYMENT
 
-        address collateral = IERC4626(vault).asset();
+    // Symbiotic VaultV2 (ERC4626) this adapter sources collateral from.
+    address public constant VAULT = 0x0000000000000000000000000000000000000000;
+    // 3F RequestWhitelist. Use the MockWhitelist address on testnets.
+    address public constant REQUEST_WHITELIST = 0x0000000000000000000000000000000000000000;
+    // Symbiotic vault factory/registry, used to validate the vault at initialize.
+    address public constant VAULT_FACTORY = 0x0000000000000000000000000000000000000000;
+    // EOA whose signatures the adapter accepts via EIP-1271. Leave zero to skip setup.
+    address public constant OFFER_SIGNER = 0x0000000000000000000000000000000000000000;
+
+    // Exposure limits. Zero disables each limit.
+    uint256 public constant PER_REQUEST_MAX_COLLATERAL = 0;
+    uint256 public constant TOTAL_MAX_COLLATERAL = 0;
+    uint256 public constant MIN_REQUEST_YIELD_BPS = 0;
+    uint256 public constant MAX_CONCURRENT_LOANS = 0;
+
+    function run() public returns (BridgeFacilitatorAdapter adapter) {
+        address collateral = IERC4626(VAULT).asset();
 
         vm.startBroadcast();
         (, address broadcaster,) = vm.readCallers();
 
         AdapterFactory adapterFactory = new AdapterFactory(broadcaster);
         BridgeFacilitatorAdapter implementation =
-            new BridgeFacilitatorAdapter(requestWhitelist, vaultFactory, address(adapterFactory));
+            new BridgeFacilitatorAdapter(REQUEST_WHITELIST, VAULT_FACTORY, address(adapterFactory));
         adapterFactory.whitelist(address(implementation));
         uint64 version = adapterFactory.lastVersion();
 
-        adapter = BridgeFacilitatorAdapter(adapterFactory.create(version, broadcaster, abi.encode(vault, bytes(""))));
+        adapter = BridgeFacilitatorAdapter(adapterFactory.create(version, broadcaster, abi.encode(VAULT, bytes(""))));
 
-        if (offerSigner != address(0)) {
-            adapter.setOfferSigner(offerSigner);
+        if (OFFER_SIGNER != address(0)) {
+            adapter.setOfferSigner(OFFER_SIGNER);
         }
-        adapter.setExposureLimits(perRequestMaxCollateral, totalMaxCollateral, minRequestYieldBps, maxConcurrentLoans);
+        adapter.setExposureLimits(
+            PER_REQUEST_MAX_COLLATERAL, TOTAL_MAX_COLLATERAL, MIN_REQUEST_YIELD_BPS, MAX_CONCURRENT_LOANS
+        );
         vm.stopBroadcast();
 
         console2.log("Deployed BridgeFacilitatorAdapter (proxy):", address(adapter));

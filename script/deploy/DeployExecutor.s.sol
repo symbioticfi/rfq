@@ -1,23 +1,28 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Script, console2} from "forge-std/Script.sol";
+import {DeployExecutorBaseScript} from "./base/DeployExecutorBase.s.sol";
 
-import {Executor} from "../../src/Executor.sol";
+// forge script script/deploy/DeployExecutor.s.sol:DeployExecutorScript --rpc-url=RPC --broadcast
 
-// forge script rfq/reactor/script/deploy/DeployExecutor.s.sol:DeployExecutorScript --rpc-url=RPC --private-key PRIVATE_KEY --broadcast
-contract DeployExecutorScript is Script {
-    function run() public returns (Executor executor) {
-        address reactor = vm.envAddress("REACTOR");
-        address admin = vm.envAddress("ADMIN");
-        address caller = vm.envAddress("CALLER");
-        address[] memory callers = new address[](1);
-        callers[0] = caller;
+contract DeployExecutorScript is DeployExecutorBaseScript {
+    // Configurations - UPDATE THESE BEFORE DEPLOYMENT
 
-        vm.startBroadcast();
-        executor = new Executor(reactor, admin, callers);
-        vm.stopBroadcast();
+    // Deployed Reactor address this Executor forwards fills to.
+    address public constant REACTOR = 0x0000000000000000000000000000000000000000;
+    // Executor owner. Defaults to the sender when left zero.
+    address public constant ADMIN = 0x0000000000000000000000000000000000000000;
+    // Initial caller allowed to invoke fill entrypoints. Defaults to the sender when left zero.
+    address public constant CALLER = 0x0000000000000000000000000000000000000000;
 
-        console2.log("Deployed Executor:", address(executor));
+    function run() public returns (DeploymentData memory data) {
+        address owner = _scriptOwner();
+        data = runBase(
+            DeployParams({
+                reactor: REACTOR,
+                admin: ADMIN == address(0) ? owner : ADMIN,
+                caller: CALLER == address(0) ? owner : CALLER
+            })
+        );
     }
 }
