@@ -6,13 +6,13 @@ import {Script, console2} from "forge-std/Script.sol";
 import {AdapterFactory} from "@symbioticfi/core/src/contracts/adapters/AdapterFactory.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
-import {BridgeFacilitatorAdapter} from "../../src/3f/BridgeFacilitatorAdapter.sol";
+import {BridgeFacilitatorAdapter} from "../src/3f/BridgeFacilitatorAdapter.sol";
 
 // Deploys an AdapterFactory, the BridgeFacilitatorAdapter implementation, and a factory-created adapter
 // proxy owned by the broadcaster. The `Adapter` base disables initializers in its constructor, so the
 // live adapter must be a factory-created proxy, not a directly-initialized contract.
 //
-// forge script script/deploy/DeployBridgeFacilitatorAdapter.s.sol:DeployBridgeFacilitatorAdapterScript \
+// forge script script/DeployBridgeFacilitatorAdapter.s.sol:DeployBridgeFacilitatorAdapterScript \
 //   --rpc-url=RPC --broadcast
 contract DeployBridgeFacilitatorAdapterScript is Script {
     // Configurations - UPDATE THESE BEFORE DEPLOYMENT

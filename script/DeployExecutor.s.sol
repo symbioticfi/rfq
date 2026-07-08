@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {DeployExecutorBaseScript} from "./base/DeployExecutorBase.s.sol";
+import {DeployExecutorBaseScript} from "./deploy/base/DeployExecutorBase.s.sol";
 
-// forge script script/deploy/DeployExecutor.s.sol:DeployExecutorScript --rpc-url=RPC --broadcast
+// forge script script/DeployExecutor.s.sol:DeployExecutorScript --rpc-url=RPC --broadcast
 
 contract DeployExecutorScript is DeployExecutorBaseScript {
     // Configurations - UPDATE THESE BEFORE DEPLOYMENT
 
     // Deployed Reactor address this Executor forwards fills to.
-    address public constant REACTOR = 0x5eB54c47837cC84249F697e3CD8C5D88bCc35dac;
+    address public constant REACTOR = 0xAE1c0995Daa1C0e56Df6c31207c69FBB5278A5B7;
     // Executor owner. Defaults to the sender when left zero.
     address public constant ADMIN = 0x0000000000000000000000000000000000000000;
     // Initial caller allowed to invoke fill entrypoints. Defaults to the sender when left zero.
