@@ -10,20 +10,21 @@ struct MarketParams {
     uint256 lltv;
 }
 
+/// @notice Morpho Blue user position.
+struct Position {
+    uint256 supplyShares;
+    uint128 borrowShares;
+    uint128 collateral;
+}
+
 /// @notice Opaque Morpho market identifier.
 type Id is bytes32;
 
 /// @notice Minimal subset of the Morpho Blue interface used by the OEV solver.
 interface IMorpho {
-    function idToMarketParams(Id id)
-        external
-        view
-        returns (address loanToken, address collateralToken, address oracle, address irm, uint256 lltv);
+    function idToMarketParams(Id id) external view returns (MarketParams memory);
 
-    function position(Id id, address user)
-        external
-        view
-        returns (uint256 supplyShares, uint128 borrowShares, uint128 collateral);
+    function position(Id id, address borrower) external view returns (Position memory);
 
     function liquidate(
         MarketParams memory marketParams,

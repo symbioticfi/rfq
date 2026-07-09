@@ -25,7 +25,7 @@ contract RfqDeployConfigTest is Test {
     function testMainnetConfigUsesLiquidLaneDeployment() public pure {
         assertEq(
             RfqDeployConfig.liquidLaneAdapterFactory(RfqDeployConfig.MAINNET_CHAIN_ID),
-            0x3b5Bb07d7af98EBdD5A715fa09C5c10aF1749460
+            0x9b5dbB434269e39e41b1E331C2AcE09e05A899B5
         );
     }
 
@@ -37,7 +37,7 @@ contract RfqDeployConfigTest is Test {
             })
         );
 
-        assertEq(data.reactor.LIQUID_LANE_ADAPTER_FACTORY(), 0x3b5Bb07d7af98EBdD5A715fa09C5c10aF1749460);
+        assertEq(data.reactor.LIQUID_LANE_ADAPTER_FACTORY(), 0x9b5dbB434269e39e41b1E331C2AcE09e05A899B5);
     }
 
     function testUnsupportedChainReverts() public {
