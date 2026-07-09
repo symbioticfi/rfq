@@ -9,7 +9,7 @@ import {MockWhitelist} from "../../src/3f/MockWhitelist.sol";
 // RequestWhitelist isn't available. Use its address as the adapter's REQUEST_WHITELIST arg on testnets only.
 //
 // forge script script/deploy/DeployMockWhitelist.s.sol:DeployMockWhitelistScript \
-//   --rpc-url sepolia --private-key $SOLVER_PRIVATE_KEY --broadcast
+//   --rpc-url=RPC --broadcast
 contract DeployMockWhitelistScript is Script {
     function run() public returns (MockWhitelist whitelist) {
         vm.startBroadcast();

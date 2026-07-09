@@ -34,25 +34,6 @@ forge build
 forge test --isolate
 ```
 
-## Deploy
-
-The repository includes helper scripts for deploying the Reactor and the example Executor:
-
-- `script/deploy/DeployExecutor.s.sol`
-- `script/deploy/DeployReactor.s.sol`
-
-Example `Executor` deployment:
-
-```bash
-REACTOR=0x... \
-ADMIN=0x... \
-CALLER=0x... \
-forge script script/deploy/DeployExecutor.s.sol:DeployExecutorScript \
-  --rpc-url "$RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
-  --broadcast
-```
-
 ## Files to know
 
 - `src/Reactor.sol`

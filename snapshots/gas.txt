@@ -7,11 +7,11 @@ Ran 2 tests for test/LiquidLaneInterfaceShape.t.sol:LiquidLaneInterfaceShapeTest
 Ran 1 test for test/3f/MockWhitelist.t.sol:MockWhitelistTest
 [PASS] test_AttestsKnownAddresses() (gas: 18679)
 
-Ran 5 tests for test/CoreMirrorIntegration.t.sol:LiquidLaneIntegrationTest
+Ran 5 tests for test/CoreIntegration.t.sol:LiquidLaneIntegrationTest
 [PASS] testLiquidLaneAdapterHandlesDirectSwapFill() (gas: 452543)
 [PASS] testLiquidLaneAdapterHandlesLocalSignedSwapSelector() (gas: 221505)
 [PASS] testLiquidLaneAdapterHandlesMixedDirectAndDiscountSwapFill() (gas: 588158)
-[PASS] testLiquidLaneConstantsMatchMirrorSchema() (gas: 460)
+[PASS] testLiquidLaneConstantsMatchCoreSchema() (gas: 416)
 [PASS] testLocalStructsExposeLiquidLaneFields() (gas: 17014)
 
 Ran 36 tests for test/Reactor.t.sol:ReactorTest
@@ -81,7 +81,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 [PASS] test_setOfferSigner_onlyOwner() (gas: 42635)
 
 ╭-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
-| lib/core-mirror/src/contracts/adapters/AdapterFactory.sol:AdapterFactory Contract |                 |        |        |        |         |
+| lib/core/src/contracts/adapters/AdapterFactory.sol:AdapterFactory Contract        |                 |        |        |        |         |
 +==========================================================================================================================================+
 | Deployment Cost                                                                   | Deployment Size |        |        |        |         |
 |-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------|
@@ -97,7 +97,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 ╰-----------------------------------------------------------------------------------+-----------------+--------+--------+--------+---------╯
 
 ╭-----------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------╮
-| lib/core-mirror/src/contracts/common/MigratableEntityProxy.sol:MigratableEntityProxy Contract |                 |       |        |        |         |
+| lib/core/src/contracts/common/MigratableEntityProxy.sol:MigratableEntityProxy Contract        |                 |       |        |        |         |
 +=====================================================================================================================================================+
 | Deployment Cost                                                                               | Deployment Size |       |        |        |         |
 |-----------------------------------------------------------------------------------------------+-----------------+-------+--------+--------+---------|
@@ -321,7 +321,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 ╰-----------------------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭---------------------------------------------------------------------+-----------------+-------+--------+-------+---------╮
-| test/CoreMirrorIntegration.t.sol:IntegrationAdapterFactory Contract |                 |       |        |       |         |
+| test/CoreIntegration.t.sol:IntegrationAdapterFactory Contract       |                 |       |        |       |         |
 +==========================================================================================================================+
 | Deployment Cost                                                     | Deployment Size |       |        |       |         |
 |---------------------------------------------------------------------+-----------------+-------+--------+-------+---------|
@@ -337,7 +337,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 ╰---------------------------------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭------------------------------------------------------------+-----------------+-------+--------+-------+---------╮
-| test/CoreMirrorIntegration.t.sol:IntegrationERC20 Contract |                 |       |        |       |         |
+| test/CoreIntegration.t.sol:IntegrationERC20 Contract       |                 |       |        |       |         |
 +=================================================================================================================+
 | Deployment Cost                                            | Deployment Size |       |        |       |         |
 |------------------------------------------------------------+-----------------+-------+--------+-------+---------|
@@ -357,7 +357,7 @@ Ran 26 tests for test/3f/BridgeFacilitatorAdapter.t.sol:BridgeFacilitatorAdapter
 ╰------------------------------------------------------------+-----------------+-------+--------+-------+---------╯
 
 ╭-----------------------------------------------------------------+-----------------+--------+--------+--------+---------╮
-| test/CoreMirrorIntegration.t.sol:LiquidLaneAdapterMock Contract |                 |        |        |        |         |
+| test/CoreIntegration.t.sol:LiquidLaneAdapterMock Contract       |                 |        |        |        |         |
 +========================================================================================================================+
 | Deployment Cost                                                 | Deployment Size |        |        |        |         |
 |-----------------------------------------------------------------+-----------------+--------+--------+--------+---------|
