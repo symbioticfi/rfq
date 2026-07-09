@@ -14,7 +14,7 @@ library RfqDeployConfig {
 
     function liquidLaneAdapterFactory(uint256 chainId) internal pure returns (address factory) {
         if (chainId == MAINNET_CHAIN_ID) {
-            factory = 0x9b5dbB434269e39e41b1E331C2AcE09e05A899B5;
+            factory = 0xDDD48b4e40819780AE286FF1909E51cF1BF5f0f5;
         } else if (chainId == HOODI_CHAIN_ID) {
             factory = 0x7Ce3f158f22aC66F8Ed2973B7a10F666818301C5;
         } else if (chainId == SEPOLIA_CHAIN_ID) {
