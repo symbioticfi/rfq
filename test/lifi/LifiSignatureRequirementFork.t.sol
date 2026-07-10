@@ -122,14 +122,37 @@ contract LifiSignatureRequirementForkTest is Test {
     }
 
     function _fillCall(IInputSettler.StandardOrder memory order, bytes32 orderId) internal view returns (bytes memory) {
+        ILiquidLaneLifiExecutor.FillRoute[] memory routes = new ILiquidLaneLifiExecutor.FillRoute[](1);
+        routes[0] = ILiquidLaneLifiExecutor.FillRoute({
+            adapter: address(adapter),
+            amountIn: order.inputs[0][1],
+            expectedAmountOut: 10 ether,
+            minAmountOut: 10 ether,
+            discount: ILiquidLaneLifiExecutor.FillDiscount({
+                discountId: bytes32(0),
+                discountSwap: ILiquidLaneAdapter.DiscountSwap({
+                    discount: ILiquidLaneAdapter.Discount({
+                        tokenToRedeem: address(0),
+                        discount: 0,
+                        signer: address(0),
+                        protocol: address(0),
+                        nonce: 0,
+                        deadline: 0
+                    }),
+                    signerSignature: "",
+                    protocolDeadline: 0
+                }),
+                protocolSignature: ""
+            })
+        });
         return abi.encode(
             ILiquidLaneLifiExecutor.FillCall({
-                adapter: address(adapter),
                 orderId: orderId,
                 output: order.outputs[0],
                 fillDeadline: order.fillDeadline,
                 solver: _id(solver),
-                fillAfter: 0
+                fillAfter: 0,
+                routes: routes
             })
         );
     }
@@ -164,6 +187,18 @@ contract ForkMintingAdapter is ILiquidLaneAdapter {
 
     constructor(ForkTestToken outputToken_) {
         outputToken = outputToken_;
+    }
+
+    function getAmountOut(address, uint256 amountIn) external pure returns (uint256) {
+        return amountIn;
+    }
+
+    function getMaxAssets(address) external pure returns (uint256) {
+        return type(uint256).max;
+    }
+
+    function minDiscount(address) external pure returns (uint256) {
+        return 0;
     }
 
     function swap(Swap calldata swap_) external {

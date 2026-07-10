@@ -2,21 +2,29 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
-import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
+import {DISCOUNT_PRECISION, ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {IInputSettler} from "./interfaces/IInputSettler.sol";
 import {ILiquidLaneLifiExecutor} from "./interfaces/ILiquidLaneLifiExecutor.sol";
 import {IOutputSettler, MandateOutput} from "./interfaces/IOutputSettler.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+interface ILiquidLaneRate {
+    function getAmountOut(address tokenToRedeem, uint256 amountIn) external view returns (uint256 amountOut);
+    function getMaxAssets(address tokenToRedeem) external returns (uint256 assets);
+    function minDiscount(address tokenToRedeem) external view returns (uint256 ppm);
+}
 
 /// @title LiquidLaneLifiExecutor
 /// @notice LI.FI same-chain callback that redeems released inputs and fills the order output atomically.
 contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExecutor {
     using Address for address payable;
+    using Math for uint256;
     using SafeERC20 for IERC20;
 
     uint8 internal constant ORDER_STATUS_DEPOSITED = 1;
@@ -55,6 +63,17 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     /* FINALISE WRAPPER */
 
     /// @inheritdoc ILiquidLaneLifiExecutor
+    function expectedOutput(ILiquidLaneLifiExecutor.FillCall calldata fillCall)
+        external
+        pure
+        returns (uint256 expectedAmountOut)
+    {
+        for (uint256 i; i < fillCall.routes.length; ++i) {
+            expectedAmountOut += fillCall.routes[i].expectedAmountOut;
+        }
+    }
+
+    /// @inheritdoc ILiquidLaneLifiExecutor
     function finaliseWithCurrentTimestamp(
         address inputSettler,
         IInputSettler.StandardOrder calldata order,
@@ -68,20 +87,10 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
 
         bytes32 solverId = _addressIdentifier(solver);
         ILiquidLaneLifiExecutor.FillCall memory fillCall = abi.decode(call, (ILiquidLaneLifiExecutor.FillCall));
-        _validateFillAfter(fillCall.fillAfter, fillCall.output.context);
-        if (_cleanIdentifier(fillCall.solver) != solverId) revert SolverMismatch();
+        bytes32 orderId = _validateFinaliseCall(order, fillCall, solverId);
 
-        bytes32 orderId = IInputSettler(INPUT_SETTLER).orderIdentifier(order);
-        if (fillCall.orderId != orderId) revert InvalidOrderId();
-        if (order.outputs.length != 1) revert InvalidOutputCount();
-        if (
-            fillCall.fillDeadline != order.fillDeadline || _outputHash(fillCall.output) != _outputHash(order.outputs[0])
-        ) {
-            revert InvalidOrderOutput();
-        }
-
-        uint8 status = IInputSettler(INPUT_SETTLER).orderStatus(orderId);
-        if (status != ORDER_STATUS_DEPOSITED) revert InvalidOrderStatus(status);
+        uint8 orderState = IInputSettler(INPUT_SETTLER).orderStatus(orderId);
+        if (orderState != ORDER_STATUS_DEPOSITED) revert InvalidOrderStatus(orderState);
 
         IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
         solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: solverId});
@@ -99,10 +108,9 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
 
         ILiquidLaneLifiExecutor.FillCall memory fillCall = abi.decode(executionData, (ILiquidLaneLifiExecutor.FillCall));
         _validateFillAfter(fillCall.fillAfter, fillCall.output.context);
-        if (!isAdapterAllowed[fillCall.adapter]) revert AdapterNotAllowed();
 
         bytes32 solver = _cleanIdentifier(fillCall.solver);
-        uint256 resolvedAmount = _resolveOutputAmount(fillCall.output, solver);
+        uint256 resolvedAmountOut = _resolveOutputAmount(fillCall.output, solver);
         _validateOutput(fillCall.output);
         address outputToken = _outputToken(fillCall.output);
 
@@ -113,28 +121,62 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
         uint256 amountIn = inputs[0][1];
         if (amountIn == 0) revert InvalidAmount();
 
-        IERC20(tokenIn).safeTransfer(fillCall.adapter, amountIn);
+        (uint256 minAmountOut, uint256[] memory executableAmountOuts) =
+            _validateRoutes(fillCall.routes, tokenIn, amountIn);
+        if (resolvedAmountOut > minAmountOut) {
+            revert InsufficientMinimumOutput(minAmountOut, resolvedAmountOut);
+        }
+
+        for (uint256 i; i < fillCall.routes.length; ++i) {
+            IERC20(tokenIn).safeTransfer(fillCall.routes[i].adapter, fillCall.routes[i].amountIn);
+        }
         uint256 outputBefore = IERC20(outputToken).balanceOf(address(this));
 
-        ILiquidLaneAdapter(fillCall.adapter)
-            .swap(
-                ILiquidLaneAdapter.Swap({
-                    recipient: address(this), tokenIn: tokenIn, amountIn: amountIn, amountOut: resolvedAmount
-                })
+        for (uint256 i; i < fillCall.routes.length; ++i) {
+            ILiquidLaneLifiExecutor.FillRoute memory route = fillCall.routes[i];
+            uint256 redeemedAmountOut;
+            if (route.discount.discountId == bytes32(0)) {
+                redeemedAmountOut = executableAmountOuts[i];
+                ILiquidLaneAdapter(route.adapter)
+                    .swap(
+                        ILiquidLaneAdapter.Swap({
+                            recipient: address(this),
+                            tokenIn: tokenIn,
+                            amountIn: route.amountIn,
+                            amountOut: redeemedAmountOut
+                        })
+                    );
+            } else {
+                redeemedAmountOut = ILiquidLaneAdapter(route.adapter)
+                    .swap(route.discount.discountSwap, route.discount.protocolSignature, address(this), route.amountIn);
+            }
+            emit InputRedeemed(
+                fillCall.orderId,
+                route.adapter,
+                tokenIn,
+                outputToken,
+                route.amountIn,
+                redeemedAmountOut,
+                route.discount.discountId
             );
+        }
 
         uint256 outputGained = IERC20(outputToken).balanceOf(address(this)) - outputBefore;
-        if (outputGained < resolvedAmount) revert InsufficientOutput();
+        if (outputGained < minAmountOut) revert InsufficientOutput(minAmountOut, outputGained);
 
-        IERC20(outputToken).forceApprove(OUTPUT_SETTLER, resolvedAmount);
+        IERC20(outputToken).forceApprove(OUTPUT_SETTLER, resolvedAmountOut);
         IOutputSettler(OUTPUT_SETTLER)
             .fill(fillCall.orderId, fillCall.output, fillCall.fillDeadline, abi.encode(solver));
         IOutputSettler(OUTPUT_SETTLER)
             .setAttestation(fillCall.orderId, solver, uint32(block.timestamp), fillCall.output);
 
-        emit InputRedeemed(fillCall.orderId, fillCall.adapter, tokenIn, outputToken, amountIn, outputGained);
         emit OutputFilled(
-            fillCall.orderId, solver, outputToken, _identifierAddress(fillCall.output.recipient), resolvedAmount
+            fillCall.orderId,
+            solver,
+            outputToken,
+            _identifierAddress(fillCall.output.recipient),
+            resolvedAmountOut,
+            outputGained - resolvedAmountOut
         );
     }
 
@@ -162,6 +204,32 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     }
 
     /* INTERNAL */
+
+    function _validateFinaliseCall(
+        IInputSettler.StandardOrder calldata order,
+        ILiquidLaneLifiExecutor.FillCall memory fillCall,
+        bytes32 solver
+    ) internal returns (bytes32 orderId) {
+        _validateFillAfter(fillCall.fillAfter, fillCall.output.context);
+        if (_cleanIdentifier(fillCall.solver) != solver) revert SolverMismatch();
+
+        orderId = IInputSettler(INPUT_SETTLER).orderIdentifier(order);
+        if (fillCall.orderId != orderId) revert InvalidOrderId();
+        if (order.inputs.length != 1) revert InvalidInputCount();
+        if (order.outputs.length != 1) revert InvalidOutputCount();
+        if (
+            fillCall.fillDeadline != order.fillDeadline || _outputHash(fillCall.output) != _outputHash(order.outputs[0])
+        ) {
+            revert InvalidOrderOutput();
+        }
+
+        _validateOutput(fillCall.output);
+        (uint256 minAmountOut,) = _validateRoutes(fillCall.routes, _inputToken(order.inputs[0][0]), order.inputs[0][1]);
+        uint256 resolvedAmountOut = _resolveOutputAmount(fillCall.output, solver);
+        if (resolvedAmountOut > minAmountOut) {
+            revert InsufficientMinimumOutput(minAmountOut, resolvedAmountOut);
+        }
+    }
 
     function _setAdapters(address[] memory newAdapters) internal {
         for (uint256 i; i < adapters.length; ++i) {
@@ -191,6 +259,72 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
 
         _outputToken(output);
         _identifierAddress(output.recipient);
+    }
+
+    function _validateRoutes(ILiquidLaneLifiExecutor.FillRoute[] memory routes, address tokenIn, uint256 orderAmountIn)
+        internal
+        returns (uint256 minAmountOut, uint256[] memory executableAmountOuts)
+    {
+        if (routes.length == 0) revert EmptyRoutes();
+
+        executableAmountOuts = new uint256[](routes.length);
+        uint256 routedAmountIn;
+        for (uint256 i; i < routes.length; ++i) {
+            ILiquidLaneLifiExecutor.FillRoute memory route = routes[i];
+            if (route.amountIn == 0) revert InvalidAmount();
+            if (route.minAmountOut == 0 || route.minAmountOut > route.expectedAmountOut) {
+                revert InvalidRouteOutputBounds(route.expectedAmountOut, route.minAmountOut);
+            }
+            if (!isAdapterAllowed[route.adapter]) revert AdapterNotAllowed();
+
+            (uint256 currentAmountOut, uint256 maxAssets) = _routeState(route, tokenIn);
+            uint256 executableAmountOut = _executableAmountOut(route, currentAmountOut, maxAssets);
+            if (executableAmountOut < route.minAmountOut) {
+                revert RouteOutputTooLow(route.adapter, route.minAmountOut, executableAmountOut);
+            }
+
+            routedAmountIn += route.amountIn;
+            minAmountOut += route.minAmountOut;
+            executableAmountOuts[i] = executableAmountOut;
+        }
+        if (routedAmountIn != orderAmountIn) revert RouteInputMismatch(routedAmountIn, orderAmountIn);
+    }
+
+    function _executableAmountOut(
+        ILiquidLaneLifiExecutor.FillRoute memory route,
+        uint256 currentAmountOut,
+        uint256 maxAssets
+    ) internal pure returns (uint256) {
+        if (route.discount.discountId == bytes32(0)) {
+            return Math.min(route.expectedAmountOut, Math.min(currentAmountOut, maxAssets));
+        }
+        if (currentAmountOut > maxAssets) {
+            revert PrivateRouteExceedsCapacity(route.adapter, currentAmountOut, maxAssets);
+        }
+        return currentAmountOut;
+    }
+
+    function _routeState(ILiquidLaneLifiExecutor.FillRoute memory route, address tokenIn)
+        internal
+        returns (uint256 amountOut, uint256 maxAssets)
+    {
+        uint256 minimumDiscount = ILiquidLaneRate(route.adapter).minDiscount(tokenIn);
+        uint256 discount = minimumDiscount;
+        if (route.discount.discountId != bytes32(0)) {
+            ILiquidLaneAdapter.Discount memory terms = route.discount.discountSwap.discount;
+            if (terms.tokenToRedeem != tokenIn) revert DiscountTokenMismatch(tokenIn, terms.tokenToRedeem);
+            if (terms.deadline < block.timestamp || route.discount.discountSwap.protocolDeadline < block.timestamp) {
+                revert DiscountExpired(terms.deadline, route.discount.discountSwap.protocolDeadline, block.timestamp);
+            }
+            discount = terms.discount;
+            if (discount < minimumDiscount || discount > DISCOUNT_PRECISION) {
+                revert InvalidDiscount(discount, minimumDiscount);
+            }
+        }
+
+        amountOut = ILiquidLaneRate(route.adapter).getAmountOut(tokenIn, route.amountIn)
+            .mulDiv(DISCOUNT_PRECISION - discount, DISCOUNT_PRECISION);
+        maxAssets = ILiquidLaneRate(route.adapter).getMaxAssets(tokenIn);
     }
 
     function _validateFillAfter(uint32 fillAfter, bytes memory context) internal view {

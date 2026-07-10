@@ -48,15 +48,14 @@ contract LiquidLaneLifiExecutorTest is Test {
     }
 
     function testFinaliseCallbackRedeemsInputThenFillsAndAttestsOutput() public {
-        adapter.setBonus(1 ether);
         rwa.mint(address(inputSettler), 10 ether);
 
         vm.expectEmit(true, true, true, true, address(executor));
         emit ILiquidLaneLifiExecutor.InputRedeemed(
-            ORDER_ID, address(adapter), address(rwa), address(outputToken), 10 ether, 10 ether
+            ORDER_ID, address(adapter), address(rwa), address(outputToken), 10 ether, 10 ether, bytes32(0)
         );
         vm.expectEmit(true, true, true, true, address(executor));
-        emit ILiquidLaneLifiExecutor.OutputFilled(ORDER_ID, SOLVER, address(outputToken), recipient, 9 ether);
+        emit ILiquidLaneLifiExecutor.OutputFilled(ORDER_ID, SOLVER, address(outputToken), recipient, 9 ether, 1 ether);
 
         inputSettler.finalise(address(executor), _inputs(10 ether), _fillCallData(9 ether));
 
@@ -70,7 +69,6 @@ contract LiquidLaneLifiExecutorTest is Test {
     }
 
     function testFinaliseWithCurrentTimestampCallsSignaturePathAndCallback() public {
-        adapter.setBonus(1 ether);
         rwa.mint(address(inputSettler), 10 ether);
 
         vm.warp(1_717_171);
@@ -149,6 +147,164 @@ contract LiquidLaneLifiExecutorTest is Test {
 
         vm.expectRevert(ILiquidLaneLifiExecutor.InvalidOrderOutput.selector);
         executor.finaliseWithCurrentTimestamp(address(inputSettler), order, SOLVER_ADDR, address(executor), call, "");
+    }
+
+    function testFinaliseWithCurrentTimestampRejectsInsufficientMinimumOutput() public {
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall =
+            _fillCallStruct(address(adapter), _orderId(order), order.outputs[0]);
+        fillCall.routes[0].expectedAmountOut = 8 ether;
+        fillCall.routes[0].minAmountOut = 8 ether;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ILiquidLaneLifiExecutor.InsufficientMinimumOutput.selector, 8 ether, 9 ether)
+        );
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
+    }
+
+    function testFinaliseWithCurrentTimestampRejectsInvalidRouteOutputBounds() public {
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall =
+            _fillCallStruct(address(adapter), _orderId(order), order.outputs[0]);
+        fillCall.routes[0].expectedAmountOut = 9 ether;
+        fillCall.routes[0].minAmountOut = 9.1 ether;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ILiquidLaneLifiExecutor.InvalidRouteOutputBounds.selector, 9 ether, 9.1 ether)
+        );
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
+    }
+
+    function testFinaliseWithCurrentTimestampClampsTargetToCurrentRate() public {
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _orderId(order);
+        inputSettler.setOrderStatus(orderId, ORDER_STATUS_DEPOSITED);
+        rwa.mint(address(inputSettler), 10 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall = _fillCallStruct(address(adapter), orderId, order.outputs[0]);
+        fillCall.routes[0].expectedAmountOut = 11 ether;
+
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
+
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+    }
+
+    function testFinaliseWithCurrentTimestampAcceptsPrivateDiscountRoute() public {
+        vm.warp(1000);
+        adapter.setMinDiscount(100_000);
+        rwa.mint(address(inputSettler), 10 ether);
+
+        IInputSettler.StandardOrder memory order = _order(10 ether, 8 ether);
+        bytes32 orderId = _orderId(order);
+        inputSettler.setOrderStatus(orderId, ORDER_STATUS_DEPOSITED);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall = _fillCallStruct(address(adapter), orderId, order.outputs[0]);
+        fillCall.routes[0] = _discountRoute(address(adapter), 10 ether, 9 ether, keccak256("discount"), 100_000);
+
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), hex"1234"
+        );
+
+        assertEq(outputToken.balanceOf(recipient), 8 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+        assertEq(rwa.balanceOf(address(adapter)), 10 ether);
+    }
+
+    function testFinaliseWithCurrentTimestampRejectsDiscountBelowAdapterMinimum() public {
+        vm.warp(1000);
+        adapter.setMinDiscount(100_000);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall =
+            _fillCallStruct(address(adapter), _orderId(order), order.outputs[0]);
+        fillCall.routes[0] = _discountRoute(address(adapter), 10 ether, 9.5 ether, keccak256("discount"), 50_000);
+
+        vm.expectRevert(abi.encodeWithSelector(ILiquidLaneLifiExecutor.InvalidDiscount.selector, 50_000, 100_000));
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
+    }
+
+    function testFinaliseWithCurrentTimestampRejectsExpiredPrivateDiscount() public {
+        vm.warp(1000);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall =
+            _fillCallStruct(address(adapter), _orderId(order), order.outputs[0]);
+        fillCall.routes[0] = _discountRoute(address(adapter), 10 ether, 10 ether, keccak256("discount"), 0);
+        fillCall.routes[0].discount.discountSwap.discount.deadline = 999;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ILiquidLaneLifiExecutor.DiscountExpired.selector, uint48(999), uint48(1100), 1000)
+        );
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
+    }
+
+    function testFinaliseWithCurrentTimestampRejectsPrivateDiscountTokenMismatch() public {
+        vm.warp(1000);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall =
+            _fillCallStruct(address(adapter), _orderId(order), order.outputs[0]);
+        fillCall.routes[0] = _discountRoute(address(adapter), 10 ether, 10 ether, keccak256("discount"), 0);
+        fillCall.routes[0].discount.discountSwap.discount.tokenToRedeem = makeAddr("wrongToken");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ILiquidLaneLifiExecutor.DiscountTokenMismatch.selector,
+                address(rwa),
+                fillCall.routes[0].discount.discountSwap.discount.tokenToRedeem
+            )
+        );
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
+    }
+
+    function testFinaliseWithCurrentTimestampAppliesAdapterMinDiscount() public {
+        adapter.setMinDiscount(100_000);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall =
+            _fillCallStruct(address(adapter), _orderId(order), order.outputs[0]);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ILiquidLaneLifiExecutor.RouteOutputTooLow.selector, address(adapter), 10 ether, 9 ether
+            )
+        );
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
+    }
+
+    function testFinaliseWithCurrentTimestampRejectsRouteInputMismatch() public {
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall =
+            _fillCallStruct(address(adapter), _orderId(order), order.outputs[0]);
+        fillCall.routes[0].amountIn = 9 ether;
+        fillCall.routes[0].expectedAmountOut = 9 ether;
+        fillCall.routes[0].minAmountOut = 9 ether;
+
+        vm.expectRevert(abi.encodeWithSelector(ILiquidLaneLifiExecutor.RouteInputMismatch.selector, 9 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
+    }
+
+    function testFinaliseWithCurrentTimestampRejectsEmptyRoutes() public {
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        ILiquidLaneLifiExecutor.FillCall memory fillCall =
+            _fillCallStruct(address(adapter), _orderId(order), order.outputs[0]);
+        fillCall.routes = new ILiquidLaneLifiExecutor.FillRoute[](0);
+
+        vm.expectRevert(ILiquidLaneLifiExecutor.EmptyRoutes.selector);
+        executor.finaliseWithCurrentTimestamp(
+            address(inputSettler), order, SOLVER_ADDR, address(executor), abi.encode(fillCall), ""
+        );
     }
 
     function testFinaliseWithCurrentTimestampRejectsFillDeadlineMismatch() public {
@@ -260,6 +416,7 @@ contract LiquidLaneLifiExecutorTest is Test {
 
     function testOrderFinalisedRejectsUnallowedAdapter() public {
         MockLifiAdapter otherAdapter = new MockLifiAdapter(outputToken);
+        inputSettler.setOrderStatus(ORDER_ID, ORDER_STATUS_CLAIMED);
         rwa.mint(address(executor), 10 ether);
 
         vm.expectRevert(ILiquidLaneLifiExecutor.AdapterNotAllowed.selector);
@@ -307,9 +464,42 @@ contract LiquidLaneLifiExecutorTest is Test {
         adapter.setNextOutputAmount(8 ether);
         rwa.mint(address(executor), 10 ether);
 
-        vm.expectRevert(ILiquidLaneLifiExecutor.InsufficientOutput.selector);
+        vm.expectRevert(abi.encodeWithSelector(ILiquidLaneLifiExecutor.InsufficientOutput.selector, 10 ether, 8 ether));
         vm.prank(address(inputSettler));
         executor.orderFinalised(_inputs(10 ether), _fillCallData(9 ether));
+    }
+
+    function testOrderFinalisedClampsDirectOutputToLiveCapacityAboveMinimum() public {
+        inputSettler.setOrderStatus(ORDER_ID, ORDER_STATUS_CLAIMED);
+        adapter.setMaxAssets(9.5 ether);
+        rwa.mint(address(executor), 10 ether);
+
+        ILiquidLaneLifiExecutor.FillCall memory fillCall = _fillCallStruct(address(adapter), _output(9 ether));
+        fillCall.routes[0].minAmountOut = 9.25 ether;
+
+        vm.prank(address(inputSettler));
+        executor.orderFinalised(_inputs(10 ether), abi.encode(fillCall));
+
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 0.5 ether);
+    }
+
+    function testOrderFinalisedRejectsPrivateOutputAboveLiveCapacity() public {
+        vm.warp(1000);
+        inputSettler.setOrderStatus(ORDER_ID, ORDER_STATUS_CLAIMED);
+        adapter.setMaxAssets(8.5 ether);
+        rwa.mint(address(executor), 10 ether);
+
+        ILiquidLaneLifiExecutor.FillCall memory fillCall = _fillCallStruct(address(adapter), _output(8 ether));
+        fillCall.routes[0] = _discountRoute(address(adapter), 10 ether, 9 ether, keccak256("discount"), 100_000);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ILiquidLaneLifiExecutor.PrivateRouteExceedsCapacity.selector, address(adapter), 9 ether, 8.5 ether
+            )
+        );
+        vm.prank(address(inputSettler));
+        executor.orderFinalised(_inputs(10 ether), abi.encode(fillCall));
     }
 
     function testOrderFinalisedDutchOutputUsesResolvedAmount() public {
@@ -349,7 +539,9 @@ contract LiquidLaneLifiExecutorTest is Test {
 
         MandateOutput memory output = _output(9 ether, _dutchContext(900, 1100, 0.01 ether));
 
-        vm.expectRevert(ILiquidLaneLifiExecutor.InsufficientOutput.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(ILiquidLaneLifiExecutor.InsufficientOutput.selector, 10 ether, 9.5 ether)
+        );
         vm.prank(address(inputSettler));
         executor.orderFinalised(_inputs(10 ether), _fillCallData(output));
     }
@@ -479,6 +671,33 @@ contract LiquidLaneLifiExecutorTest is Test {
         assertEq(rwa.balanceOf(recipient), 10 ether);
     }
 
+    function testOrderFinalisedExecutesMultipleRoutesAndKeepsSurplus() public {
+        MockLifiAdapter secondAdapter = new MockLifiAdapter(outputToken);
+        outputToken.mint(address(secondAdapter), 100 ether);
+        address[] memory adapters = new address[](2);
+        adapters[0] = address(adapter);
+        adapters[1] = address(secondAdapter);
+
+        vm.prank(owner);
+        executor.setAdapters(adapters);
+
+        inputSettler.setOrderStatus(ORDER_ID, ORDER_STATUS_CLAIMED);
+        rwa.mint(address(executor), 10 ether);
+
+        ILiquidLaneLifiExecutor.FillCall memory fillCall = _fillCallStruct(address(adapter), _output(9 ether));
+        fillCall.routes = new ILiquidLaneLifiExecutor.FillRoute[](2);
+        fillCall.routes[0] = _directRoute(address(adapter), 4 ether, 4 ether);
+        fillCall.routes[1] = _directRoute(address(secondAdapter), 6 ether, 6 ether);
+
+        vm.prank(address(inputSettler));
+        executor.orderFinalised(_inputs(10 ether), abi.encode(fillCall));
+
+        assertEq(rwa.balanceOf(address(adapter)), 4 ether);
+        assertEq(rwa.balanceOf(address(secondAdapter)), 6 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+    }
+
     function testSetAdaptersReplacesAllowlistAndOwnerSweepsSurplus() public {
         MockLifiAdapter nextAdapter = new MockLifiAdapter(outputToken);
         address[] memory adapters = new address[](1);
@@ -567,13 +786,79 @@ contract LiquidLaneLifiExecutorTest is Test {
         view
         returns (ILiquidLaneLifiExecutor.FillCall memory)
     {
+        ILiquidLaneLifiExecutor.FillRoute[] memory routes = new ILiquidLaneLifiExecutor.FillRoute[](1);
+        routes[0] = _directRoute(fillAdapter, 10 ether, 10 ether);
         return ILiquidLaneLifiExecutor.FillCall({
-            adapter: fillAdapter,
             orderId: orderId,
             output: output,
             fillDeadline: uint32(block.timestamp + 1 hours),
             solver: SOLVER,
-            fillAfter: 0
+            fillAfter: 0,
+            routes: routes
+        });
+    }
+
+    function _directRoute(address fillAdapter, uint256 amountIn, uint256 expectedAmountOut)
+        internal
+        pure
+        returns (ILiquidLaneLifiExecutor.FillRoute memory)
+    {
+        return ILiquidLaneLifiExecutor.FillRoute({
+            adapter: fillAdapter,
+            amountIn: amountIn,
+            expectedAmountOut: expectedAmountOut,
+            minAmountOut: expectedAmountOut,
+            discount: _emptyDiscount()
+        });
+    }
+
+    function _discountRoute(
+        address fillAdapter,
+        uint256 amountIn,
+        uint256 expectedAmountOut,
+        bytes32 discountId,
+        uint256 discount
+    ) internal view returns (ILiquidLaneLifiExecutor.FillRoute memory) {
+        return ILiquidLaneLifiExecutor.FillRoute({
+            adapter: fillAdapter,
+            amountIn: amountIn,
+            expectedAmountOut: expectedAmountOut,
+            minAmountOut: expectedAmountOut,
+            discount: ILiquidLaneLifiExecutor.FillDiscount({
+                discountId: discountId,
+                discountSwap: ILiquidLaneAdapter.DiscountSwap({
+                    discount: ILiquidLaneAdapter.Discount({
+                        tokenToRedeem: address(rwa),
+                        discount: discount,
+                        signer: SOLVER_ADDR,
+                        protocol: address(0xBEEF),
+                        nonce: 1,
+                        deadline: uint48(block.timestamp + 100)
+                    }),
+                    signerSignature: hex"1234",
+                    protocolDeadline: uint48(block.timestamp + 100)
+                }),
+                protocolSignature: hex"5678"
+            })
+        });
+    }
+
+    function _emptyDiscount() internal pure returns (ILiquidLaneLifiExecutor.FillDiscount memory) {
+        return ILiquidLaneLifiExecutor.FillDiscount({
+            discountId: bytes32(0),
+            discountSwap: ILiquidLaneAdapter.DiscountSwap({
+                discount: ILiquidLaneAdapter.Discount({
+                    tokenToRedeem: address(0),
+                    discount: 0,
+                    signer: address(0),
+                    protocol: address(0),
+                    nonce: 0,
+                    deadline: 0
+                }),
+                signerSignature: "",
+                protocolDeadline: 0
+            }),
+            protocolSignature: ""
         });
     }
 
@@ -901,7 +1186,9 @@ contract MockOutputSettler is IOutputSettler {
 contract MockLifiAdapter is ILiquidLaneAdapter {
     TestToken public immutable outputToken;
     uint256 public bonus;
+    uint256 public discount;
     uint256 public nextOutputAmount;
+    uint256 public maxAssets = type(uint256).max;
 
     constructor(TestToken outputToken_) {
         outputToken = outputToken_;
@@ -915,6 +1202,26 @@ contract MockLifiAdapter is ILiquidLaneAdapter {
         nextOutputAmount = amount;
     }
 
+    function setMinDiscount(uint256 discount_) public {
+        discount = discount_;
+    }
+
+    function setMaxAssets(uint256 maxAssets_) public {
+        maxAssets = maxAssets_;
+    }
+
+    function getAmountOut(address, uint256 amountIn) external pure returns (uint256) {
+        return amountIn;
+    }
+
+    function getMaxAssets(address) external returns (uint256) {
+        return maxAssets;
+    }
+
+    function minDiscount(address) external view returns (uint256) {
+        return discount;
+    }
+
     function swap(ILiquidLaneAdapter.Swap calldata swap_) public {
         require(IERC20(swap_.tokenIn).balanceOf(address(this)) >= swap_.amountIn, "missing input");
 
@@ -925,12 +1232,16 @@ contract MockLifiAdapter is ILiquidLaneAdapter {
 
     function swap(ILiquidLaneAdapter.SignedSwap calldata, bytes calldata) public {}
 
-    function swap(ILiquidLaneAdapter.DiscountSwap calldata, bytes calldata, address, uint256)
-        public
-        pure
-        returns (uint256)
-    {
-        return 0;
+    function swap(
+        ILiquidLaneAdapter.DiscountSwap calldata discountSwap,
+        bytes calldata,
+        address recipient,
+        uint256 amountIn
+    ) public returns (uint256) {
+        require(IERC20(discountSwap.discount.tokenToRedeem).balanceOf(address(this)) >= amountIn, "missing input");
+        uint256 amountOut = amountIn * (1_000_000 - discountSwap.discount.discount) / 1_000_000;
+        outputToken.transfer(recipient, amountOut);
+        return amountOut;
     }
 }
 
