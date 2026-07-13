@@ -9,7 +9,7 @@ contract DeployExecutorScript is DeployExecutorBaseScript {
     // Configurations - UPDATE THESE BEFORE DEPLOYMENT
 
     // Deployed Reactor address this Executor forwards fills to.
-    address public constant REACTOR = 0x4005C42193a44E2DAD39814561D7F70be8dd9CB3;
+    address public constant REACTOR = 0xC323B898d7E4105E3980082B74CC5D4602996B10;
     // Executor owner. Defaults to the sender when left zero.
     address public constant ADMIN = 0x0000000000000000000000000000000000000000;
     // Initial caller allowed to invoke fill entrypoints. Defaults to the sender when left zero.
