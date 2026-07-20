@@ -8,11 +8,13 @@ import {ILiquidLaneLifiExecutor} from "./interfaces/ILiquidLaneLifiExecutor.sol"
 import {IOutputSettler, MandateOutput} from "./interfaces/IOutputSettler.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 interface ILiquidLaneRate {
     function getAmountOut(address tokenToRedeem, uint256 amountIn) external view returns (uint256 amountOut);
@@ -21,7 +23,7 @@ interface ILiquidLaneRate {
 }
 
 /// @title LiquidLaneLifiExecutor
-/// @notice LI.FI same-chain callback that redeems released inputs and fills the order output atomically.
+/// @notice LI.FI same-chain solver that redeems released inputs and fills the order output atomically.
 contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExecutor {
     using Address for address payable;
     using Math for uint256;
@@ -41,23 +43,13 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     /// @inheritdoc ILiquidLaneLifiExecutor
     address public immutable OUTPUT_SETTLER;
 
-    /* STATE */
-
-    /// @dev LiquidLane adapters allowed for LI.FI input redemptions.
-    address[] public adapters;
-    /// @inheritdoc ILiquidLaneLifiExecutor
-    mapping(address adapter => bool allowed) public isAdapterAllowed;
-
     /* CONSTRUCTOR */
 
-    constructor(address inputSettler, address outputSettler, address owner_, address[] memory initAdapters)
-        Ownable(owner_)
-    {
+    constructor(address inputSettler, address outputSettler, address owner_) Ownable(owner_) {
         if (inputSettler == address(0) || outputSettler == address(0) || owner_ == address(0)) revert ZeroAddress();
 
         INPUT_SETTLER = inputSettler;
         OUTPUT_SETTLER = outputSettler;
-        _setAdapters(initAdapters);
     }
 
     /* FINALISE WRAPPER */
@@ -74,29 +66,21 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     }
 
     /// @inheritdoc ILiquidLaneLifiExecutor
-    function finaliseWithCurrentTimestamp(
-        address inputSettler,
-        IInputSettler.StandardOrder calldata order,
-        address solver,
-        address destination,
-        bytes calldata call,
-        bytes calldata orderOwnerSignature
-    ) external {
-        if (inputSettler != INPUT_SETTLER) revert InvalidInputSettler();
-        if (destination != address(this)) revert InvalidDestination();
-
-        bytes32 solverId = _addressIdentifier(solver);
+    function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, bytes calldata call)
+        external
+        onlyOwner
+    {
         ILiquidLaneLifiExecutor.FillCall memory fillCall = abi.decode(call, (ILiquidLaneLifiExecutor.FillCall));
-        bytes32 orderId = _validateFinaliseCall(order, fillCall, solverId);
+        bytes32 orderId = _validateFinaliseCall(order, fillCall);
 
         uint8 orderState = IInputSettler(INPUT_SETTLER).orderStatus(orderId);
         if (orderState != ORDER_STATUS_DEPOSITED) revert InvalidOrderStatus(orderState);
 
+        bytes32 executorId = _addressIdentifier(address(this));
         IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
-        solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: solverId});
+        solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
 
-        IInputSettler(INPUT_SETTLER)
-            .finaliseWithSignature(order, solveParams, _addressIdentifier(destination), call, orderOwnerSignature);
+        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, call);
     }
 
     /* IINPUTCALLBACK */
@@ -109,7 +93,7 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
         ILiquidLaneLifiExecutor.FillCall memory fillCall = abi.decode(executionData, (ILiquidLaneLifiExecutor.FillCall));
         _validateFillAfter(fillCall.fillAfter, fillCall.output.context);
 
-        bytes32 solver = _cleanIdentifier(fillCall.solver);
+        bytes32 solver = _addressIdentifier(address(this));
         uint256 resolvedAmountOut = _resolveOutputAmount(fillCall.output, solver);
         _validateOutput(fillCall.output);
         address outputToken = _outputToken(fillCall.output);
@@ -127,42 +111,8 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
             revert InsufficientMinimumOutput(minAmountOut, resolvedAmountOut);
         }
 
-        for (uint256 i; i < fillCall.routes.length; ++i) {
-            IERC20(tokenIn).safeTransfer(fillCall.routes[i].adapter, fillCall.routes[i].amountIn);
-        }
-        uint256 outputBefore = IERC20(outputToken).balanceOf(address(this));
-
-        for (uint256 i; i < fillCall.routes.length; ++i) {
-            ILiquidLaneLifiExecutor.FillRoute memory route = fillCall.routes[i];
-            uint256 redeemedAmountOut;
-            if (route.discount.discountId == bytes32(0)) {
-                redeemedAmountOut = executableAmountOuts[i];
-                ILiquidLaneAdapter(route.adapter)
-                    .swap(
-                        ILiquidLaneAdapter.Swap({
-                            recipient: address(this),
-                            tokenIn: tokenIn,
-                            amountIn: route.amountIn,
-                            amountOut: redeemedAmountOut
-                        })
-                    );
-            } else {
-                redeemedAmountOut = ILiquidLaneAdapter(route.adapter)
-                    .swap(route.discount.discountSwap, route.discount.protocolSignature, address(this), route.amountIn);
-            }
-            emit InputRedeemed(
-                fillCall.orderId,
-                route.adapter,
-                tokenIn,
-                outputToken,
-                route.amountIn,
-                redeemedAmountOut,
-                route.discount.discountId
-            );
-        }
-
-        uint256 outputGained = IERC20(outputToken).balanceOf(address(this)) - outputBefore;
-        if (outputGained < minAmountOut) revert InsufficientOutput(minAmountOut, outputGained);
+        uint256 outputGained = _redeemInputs(fillCall, tokenIn, outputToken, executableAmountOuts);
+        uint256 surplus = outputGained - resolvedAmountOut;
 
         IERC20(outputToken).forceApprove(OUTPUT_SETTLER, resolvedAmountOut);
         IOutputSettler(OUTPUT_SETTLER)
@@ -176,19 +126,14 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
             outputToken,
             _identifierAddress(fillCall.output.recipient),
             resolvedAmountOut,
-            outputGained - resolvedAmountOut
+            surplus
         );
     }
 
     /* OWNER */
 
     /// @inheritdoc ILiquidLaneLifiExecutor
-    function setAdapters(address[] calldata newAdapters) external onlyOwner {
-        _setAdapters(newAdapters);
-    }
-
-    /// @inheritdoc ILiquidLaneLifiExecutor
-    function sweepERC20(address token, address to, uint256 amount) external onlyOwner {
+    function sweepERC20(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (token == address(0) || to == address(0)) revert ZeroAddress();
 
         IERC20(token).safeTransfer(to, amount);
@@ -196,22 +141,30 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     }
 
     /// @inheritdoc ILiquidLaneLifiExecutor
-    function sweepNative(address to, uint256 amount) external onlyOwner {
+    function sweepNative(address to, uint256 amount) external onlyOwner nonReentrant {
         if (to == address(0)) revert ZeroAddress();
 
         payable(to).sendValue(amount);
         emit SweepNative(to, amount);
     }
 
+    /* EIP-1271 */
+
+    /// @inheritdoc IERC1271
+    function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
+        if (SignatureChecker.isValidSignatureNow(owner(), hash, signature)) {
+            return IERC1271.isValidSignature.selector;
+        }
+        return 0xffffffff;
+    }
+
     /* INTERNAL */
 
     function _validateFinaliseCall(
         IInputSettler.StandardOrder calldata order,
-        ILiquidLaneLifiExecutor.FillCall memory fillCall,
-        bytes32 solver
-    ) internal returns (bytes32 orderId) {
+        ILiquidLaneLifiExecutor.FillCall memory fillCall
+    ) internal view returns (bytes32 orderId) {
         _validateFillAfter(fillCall.fillAfter, fillCall.output.context);
-        if (_cleanIdentifier(fillCall.solver) != solver) revert SolverMismatch();
 
         orderId = IInputSettler(INPUT_SETTLER).orderIdentifier(order);
         if (fillCall.orderId != orderId) revert InvalidOrderId();
@@ -224,29 +177,52 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
         }
 
         _validateOutput(fillCall.output);
-        (uint256 minAmountOut,) = _validateRoutes(fillCall.routes, _inputToken(order.inputs[0][0]), order.inputs[0][1]);
-        uint256 resolvedAmountOut = _resolveOutputAmount(fillCall.output, solver);
-        if (resolvedAmountOut > minAmountOut) {
-            revert InsufficientMinimumOutput(minAmountOut, resolvedAmountOut);
-        }
     }
 
-    function _setAdapters(address[] memory newAdapters) internal {
-        for (uint256 i; i < adapters.length; ++i) {
-            isAdapterAllowed[adapters[i]] = false;
-        }
-        delete adapters;
-
-        for (uint256 i; i < newAdapters.length; ++i) {
-            address adapter = newAdapters[i];
-            if (adapter == address(0)) revert ZeroAddress();
-            if (isAdapterAllowed[adapter]) revert DuplicateAdapter();
-
-            isAdapterAllowed[adapter] = true;
-            adapters.push(adapter);
+    function _redeemInputs(
+        ILiquidLaneLifiExecutor.FillCall memory fillCall,
+        address tokenIn,
+        address outputToken,
+        uint256[] memory executableAmountOuts
+    ) internal returns (uint256 outputGained) {
+        for (uint256 i; i < fillCall.routes.length; ++i) {
+            IERC20(tokenIn).safeTransfer(fillCall.routes[i].adapter, fillCall.routes[i].amountIn);
         }
 
-        emit SetAdapters(newAdapters);
+        for (uint256 i; i < fillCall.routes.length; ++i) {
+            ILiquidLaneLifiExecutor.FillRoute memory route = fillCall.routes[i];
+            uint256 outputBefore = IERC20(outputToken).balanceOf(address(this));
+            if (route.discount.discountId == bytes32(0)) {
+                ILiquidLaneAdapter(route.adapter)
+                    .swap(
+                        ILiquidLaneAdapter.Swap({
+                            recipient: address(this),
+                            tokenIn: tokenIn,
+                            amountIn: route.amountIn,
+                            amountOut: executableAmountOuts[i]
+                        })
+                    );
+            } else {
+                ILiquidLaneAdapter(route.adapter)
+                    .swap(route.discount.discountSwap, route.discount.protocolSignature, address(this), route.amountIn);
+            }
+
+            uint256 routeOutput = IERC20(outputToken).balanceOf(address(this)) - outputBefore;
+            if (routeOutput < route.minAmountOut) {
+                revert RouteOutputTooLow(route.adapter, route.minAmountOut, routeOutput);
+            }
+            outputGained += routeOutput;
+
+            emit InputRedeemed(
+                fillCall.orderId,
+                route.adapter,
+                tokenIn,
+                outputToken,
+                route.amountIn,
+                routeOutput,
+                route.discount.discountId
+            );
+        }
     }
 
     function _validateOutput(MandateOutput memory output) internal view {
@@ -275,7 +251,7 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
             if (route.minAmountOut == 0 || route.minAmountOut > route.expectedAmountOut) {
                 revert InvalidRouteOutputBounds(route.expectedAmountOut, route.minAmountOut);
             }
-            if (!isAdapterAllowed[route.adapter]) revert AdapterNotAllowed();
+            if (route.adapter == address(0)) revert ZeroAddress();
 
             (uint256 currentAmountOut, uint256 maxAssets) = _routeState(route, tokenIn);
             uint256 executableAmountOut = _executableAmountOut(route, currentAmountOut, maxAssets);
@@ -422,6 +398,8 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     }
 
     function _inputToken(uint256 tokenId) internal pure returns (address token) {
+        // High bits are rejected by the equality check below.
+        // forge-lint: disable-next-line(unsafe-typecast)
         token = address(uint160(tokenId));
         if (token == address(0) || tokenId != uint256(uint160(token))) revert InvalidIdentifier();
     }
@@ -439,10 +417,6 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
         assembly ("memory-safe") {
             value := mload(add(add(data, 0x20), offset))
         }
-    }
-
-    function _cleanIdentifier(bytes32 identifier) internal pure returns (bytes32 clean) {
-        clean = _addressIdentifier(_identifierAddress(identifier));
     }
 
     function _addressIdentifier(address addr) internal pure returns (bytes32 identifier) {

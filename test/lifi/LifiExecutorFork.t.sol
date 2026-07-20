@@ -12,19 +12,16 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {Test} from "forge-std/Test.sol";
 
 interface IInputSettlerEscrowLike {
-    function DOMAIN_SEPARATOR() external view returns (bytes32);
     function open(IInputSettler.StandardOrder calldata order) external;
     function orderIdentifier(IInputSettler.StandardOrder calldata order) external view returns (bytes32);
     function orderStatus(bytes32 orderId) external view returns (uint8);
 }
 
-contract LifiSignatureRequirementForkTest is Test {
+contract LifiExecutorForkTest is Test {
     address internal constant INPUT_SETTLER = 0x000025c3226C00B2Cdc200005a1600509f4e00C0;
     address internal constant OUTPUT_SETTLER = 0x0000000000eC36B683C2E6AC89e9A75989C22a2e;
 
     address internal user = makeAddr("user");
-    address internal solver;
-    uint256 internal solverKey;
     address internal owner = makeAddr("owner");
     address internal recipient = makeAddr("recipient");
 
@@ -40,37 +37,24 @@ contract LifiSignatureRequirementForkTest is Test {
         }
 
         vm.createSelectFork(rpcUrl);
-        (solver, solverKey) = makeAddrAndKey("solver");
-
         inputToken = new ForkTestToken("Fork RWA", "FRWA");
         outputToken = new ForkTestToken("Fork USD", "FUSD");
         adapter = new ForkMintingAdapter(outputToken);
 
-        address[] memory adapters = new address[](1);
-        adapters[0] = address(adapter);
-        executor = new LiquidLaneLifiExecutor(INPUT_SETTLER, OUTPUT_SETTLER, owner, adapters);
+        executor = new LiquidLaneLifiExecutor(INPUT_SETTLER, OUTPUT_SETTLER, owner);
     }
 
-    function testEmptyOrderOwnerSignatureRevertsOnRealSettler() external {
-        IInputSettler.StandardOrder memory order = _openOrder(10 ether, 9 ether, "empty");
+    function testExecutorFinalisesOpenedOrderOnRealSettler() external {
+        IInputSettler.StandardOrder memory order = _openOrder(10 ether, 9 ether, "executor");
         bytes32 orderId = IInputSettlerEscrowLike(INPUT_SETTLER).orderIdentifier(order);
         bytes memory call = _fillCall(order, orderId);
 
-        vm.expectRevert();
-        executor.finaliseWithCurrentTimestamp(INPUT_SETTLER, order, solver, address(executor), call, "");
-    }
-
-    function testSignedAllowOpenSettlesOnRealSettler() external {
-        IInputSettler.StandardOrder memory order = _openOrder(10 ether, 9 ether, "signed");
-        bytes32 orderId = IInputSettlerEscrowLike(INPUT_SETTLER).orderIdentifier(order);
-        bytes memory call = _fillCall(order, orderId);
-
-        executor.finaliseWithCurrentTimestamp(
-            INPUT_SETTLER, order, solver, address(executor), call, _allowOpenSignature(orderId, address(executor), call)
-        );
+        vm.prank(owner);
+        executor.finaliseWithCurrentTimestamp(order, call);
 
         assertEq(IInputSettlerEscrowLike(INPUT_SETTLER).orderStatus(orderId), 2, "claimed");
         assertEq(outputToken.balanceOf(recipient), 9 ether, "recipient output");
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether, "executor surplus");
     }
 
     function _openOrder(uint256 amountIn, uint256 amountOut, string memory salt)
@@ -111,7 +95,7 @@ contract LifiSignatureRequirementForkTest is Test {
 
         order = IInputSettler.StandardOrder({
             user: user,
-            nonce: uint256(keccak256(abi.encodePacked("signature-requirement", salt))),
+            nonce: uint256(keccak256(abi.encodePacked("lifi-executor", salt))),
             originChainId: block.chainid,
             expires: uint32(block.timestamp + 1 hours),
             fillDeadline: uint32(block.timestamp + 30 minutes),
@@ -150,31 +134,10 @@ contract LifiSignatureRequirementForkTest is Test {
                 orderId: orderId,
                 output: order.outputs[0],
                 fillDeadline: order.fillDeadline,
-                solver: _id(solver),
                 fillAfter: 0,
                 routes: routes
             })
         );
-    }
-
-    function _allowOpenSignature(bytes32 orderId, address destination, bytes memory call)
-        internal
-        view
-        returns (bytes memory)
-    {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                keccak256("AllowOpen(bytes32 orderId,bytes32 destination,bytes call)"),
-                orderId,
-                _id(destination),
-                keccak256(call)
-            )
-        );
-        bytes32 digest = keccak256(
-            abi.encodePacked("\x19\x01", IInputSettlerEscrowLike(INPUT_SETTLER).DOMAIN_SEPARATOR(), structHash)
-        );
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(solverKey, digest);
-        return abi.encodePacked(r, s, v);
     }
 
     function _id(address addr) internal pure returns (bytes32) {

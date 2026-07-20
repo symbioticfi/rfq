@@ -33,11 +33,10 @@ interface IInputSettler {
 
     function orderIdentifier(StandardOrder calldata order) external view returns (bytes32 orderId);
 
-    function finaliseWithSignature(
+    function finalise(
         StandardOrder calldata order,
         SolveParams[] calldata solveParams,
         bytes32 destination,
-        bytes calldata call,
-        bytes calldata orderOwnerSignature
+        bytes calldata call
     ) external;
 }
