@@ -14,6 +14,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 interface ILiquidLaneRate {
@@ -24,7 +25,7 @@ interface ILiquidLaneRate {
 
 /// @title LiquidLaneLifiExecutor
 /// @notice LI.FI same-chain solver that redeems released inputs and fills the order output atomically.
-contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExecutor {
+contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, EIP712, ILiquidLaneLifiExecutor {
     using Address for address payable;
     using Math for uint256;
     using SafeERC20 for IERC20;
@@ -35,6 +36,7 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     uint8 internal constant OUTPUT_CONTEXT_DUTCH = 0x01;
     uint8 internal constant OUTPUT_CONTEXT_EXCLUSIVE = 0xe0;
     uint8 internal constant OUTPUT_CONTEXT_EXCLUSIVE_DUTCH = 0xe1;
+    bytes32 public constant LIFI_REGISTRATION_TYPEHASH = keccak256("LifiRegistration(bytes32 messageHash)");
 
     /* IMMUTABLES */
 
@@ -52,6 +54,7 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
 
     constructor(address inputSettler, address outputSettler, address owner_, address[] memory initCallers)
         Ownable(owner_)
+        EIP712("LiquidLaneLifiExecutor", "1")
     {
         if (inputSettler == address(0) || outputSettler == address(0) || owner_ == address(0)) revert ZeroAddress();
 
@@ -181,10 +184,18 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
 
     /* EIP-1271 */
 
+    /// @inheritdoc ILiquidLaneLifiExecutor
+    function lifiRegistrationDigest(bytes32 messageHash) public view returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(LIFI_REGISTRATION_TYPEHASH, messageHash)));
+    }
+
     /// @inheritdoc IERC1271
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
-        if (SignatureChecker.isValidSignatureNow(owner(), hash, signature)) {
-            return IERC1271.isValidSignature.selector;
+        bytes32 digest = lifiRegistrationDigest(hash);
+        for (uint256 i; i < callers.length; ++i) {
+            if (SignatureChecker.isValidSignatureNowCalldata(callers[i], digest, signature)) {
+                return IERC1271.isValidSignature.selector;
+            }
         }
         return 0xffffffff;
     }
@@ -237,11 +248,11 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
                 ILiquidLaneAdapter(route.adapter)
                     .swap(
                         ILiquidLaneAdapter.Swap({
-                        recipient: address(this),
-                        tokenIn: tokenIn,
-                        amountIn: route.amountIn,
-                        amountOut: executableAmountOuts[i]
-                    })
+                            recipient: address(this),
+                            tokenIn: tokenIn,
+                            amountIn: route.amountIn,
+                            amountOut: executableAmountOuts[i]
+                        })
                     );
             } else {
                 ILiquidLaneAdapter(route.adapter)

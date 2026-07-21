@@ -141,33 +141,92 @@ contract LiquidLaneLifiExecutorTest is Test {
         executor.setCallers(_callers(caller));
     }
 
-    function testIsValidSignatureAcceptsOwner() public {
-        uint256 ownerKey = 0xA11CE;
-        LiquidLaneLifiExecutor ownedExecutor = new LiquidLaneLifiExecutor(
-            address(inputSettler), address(outputSettler), vm.addr(ownerKey), new address[](0)
+    function testIsValidSignatureAcceptsCallerWithRegistrationDomain() public {
+        uint256 callerKey = 0xA11CE;
+        LiquidLaneLifiExecutor callerExecutor = new LiquidLaneLifiExecutor(
+            address(inputSettler), address(outputSettler), owner, _callers(vm.addr(callerKey))
         );
-        bytes32 digest = keccak256("lifi registration");
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+        bytes32 messageHash = keccak256("lifi registration");
+        bytes32 digest = callerExecutor.lifiRegistrationDigest(messageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(callerKey, digest);
 
-        assertEq(ownedExecutor.isValidSignature(digest, abi.encodePacked(r, s, v)), IERC1271.isValidSignature.selector);
+        assertEq(
+            callerExecutor.isValidSignature(messageHash, abi.encodePacked(r, s, v)), IERC1271.isValidSignature.selector
+        );
     }
 
-    function testIsValidSignatureRejectsOtherSigner() public {
-        LiquidLaneLifiExecutor ownedExecutor = new LiquidLaneLifiExecutor(
-            address(inputSettler), address(outputSettler), vm.addr(0xA11CE), new address[](0)
-        );
-        bytes32 digest = keccak256("lifi registration");
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xB0B, digest);
+    function testIsValidSignatureAcceptsAnyCaller() public {
+        uint256 firstCallerKey = 0xA11CE;
+        uint256 secondCallerKey = 0xB0B;
+        address[] memory allowedCallers = new address[](2);
+        allowedCallers[0] = vm.addr(firstCallerKey);
+        allowedCallers[1] = vm.addr(secondCallerKey);
+        LiquidLaneLifiExecutor callerExecutor =
+            new LiquidLaneLifiExecutor(address(inputSettler), address(outputSettler), owner, allowedCallers);
+        bytes32 messageHash = keccak256("lifi registration");
+        bytes32 digest = callerExecutor.lifiRegistrationDigest(messageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(secondCallerKey, digest);
 
-        assertEq(ownedExecutor.isValidSignature(digest, abi.encodePacked(r, s, v)), bytes4(0xffffffff));
+        assertEq(
+            callerExecutor.isValidSignature(messageHash, abi.encodePacked(r, s, v)), IERC1271.isValidSignature.selector
+        );
+    }
+
+    function testIsValidSignatureRejectsOwnerWhenNotCaller() public {
+        uint256 ownerKey = 0xA11CE;
+        LiquidLaneLifiExecutor callerExecutor = new LiquidLaneLifiExecutor(
+            address(inputSettler), address(outputSettler), vm.addr(ownerKey), _callers(vm.addr(0xB0B))
+        );
+        bytes32 messageHash = keccak256("lifi registration");
+        bytes32 digest = callerExecutor.lifiRegistrationDigest(messageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+
+        assertEq(callerExecutor.isValidSignature(messageHash, abi.encodePacked(r, s, v)), bytes4(0xffffffff));
+    }
+
+    function testIsValidSignatureRejectsRawMessageHashSignature() public {
+        uint256 callerKey = 0xA11CE;
+        LiquidLaneLifiExecutor callerExecutor = new LiquidLaneLifiExecutor(
+            address(inputSettler), address(outputSettler), owner, _callers(vm.addr(callerKey))
+        );
+        bytes32 messageHash = keccak256("lifi registration");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(callerKey, messageHash);
+
+        assertEq(callerExecutor.isValidSignature(messageHash, abi.encodePacked(r, s, v)), bytes4(0xffffffff));
+    }
+
+    function testIsValidSignatureRejectsSignatureForAnotherExecutor() public {
+        uint256 callerKey = 0xA11CE;
+        address caller = vm.addr(callerKey);
+        LiquidLaneLifiExecutor firstExecutor =
+            new LiquidLaneLifiExecutor(address(inputSettler), address(outputSettler), owner, _callers(caller));
+        LiquidLaneLifiExecutor secondExecutor =
+            new LiquidLaneLifiExecutor(address(inputSettler), address(outputSettler), owner, _callers(caller));
+        bytes32 messageHash = keccak256("lifi registration");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(callerKey, firstExecutor.lifiRegistrationDigest(messageHash));
+
+        assertEq(secondExecutor.isValidSignature(messageHash, abi.encodePacked(r, s, v)), bytes4(0xffffffff));
+    }
+
+    function testIsValidSignatureRejectsRemovedCaller() public {
+        uint256 callerKey = 0xA11CE;
+        LiquidLaneLifiExecutor callerExecutor = new LiquidLaneLifiExecutor(
+            address(inputSettler), address(outputSettler), owner, _callers(vm.addr(callerKey))
+        );
+        bytes32 messageHash = keccak256("lifi registration");
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(callerKey, callerExecutor.lifiRegistrationDigest(messageHash));
+
+        callerExecutor.setCallers(new address[](0));
+
+        assertEq(callerExecutor.isValidSignature(messageHash, abi.encodePacked(r, s, v)), bytes4(0xffffffff));
     }
 
     function testIsValidSignatureRejectsMalformedSignature() public {
-        LiquidLaneLifiExecutor ownedExecutor = new LiquidLaneLifiExecutor(
-            address(inputSettler), address(outputSettler), vm.addr(0xA11CE), new address[](0)
+        LiquidLaneLifiExecutor callerExecutor = new LiquidLaneLifiExecutor(
+            address(inputSettler), address(outputSettler), owner, _callers(vm.addr(0xA11CE))
         );
 
-        assertEq(ownedExecutor.isValidSignature(keccak256("lifi registration"), hex"deadbeef"), bytes4(0xffffffff));
+        assertEq(callerExecutor.isValidSignature(keccak256("lifi registration"), hex"deadbeef"), bytes4(0xffffffff));
     }
 
     function testFinaliseWithCurrentTimestampRejectsOrderIdMismatch() public {

@@ -123,6 +123,7 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
     function expectedOutput(FillCall calldata fillCall) external pure returns (uint256 expectedAmountOut);
     function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, bytes calldata call) external;
     function isCaller(address caller) external view returns (bool allowed);
+    function lifiRegistrationDigest(bytes32 messageHash) external view returns (bytes32 digest);
     function setCallers(address[] calldata newCallers) external;
     function sweepERC20(address token, address to, uint256 amount) external;
     function sweepNative(address to, uint256 amount) external;
