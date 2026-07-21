@@ -196,11 +196,11 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
                 ILiquidLaneAdapter(route.adapter)
                     .swap(
                         ILiquidLaneAdapter.Swap({
-                            recipient: address(this),
-                            tokenIn: tokenIn,
-                            amountIn: route.amountIn,
-                            amountOut: executableAmountOuts[i]
-                        })
+                        recipient: address(this),
+                        tokenIn: tokenIn,
+                        amountIn: route.amountIn,
+                        amountOut: executableAmountOuts[i]
+                    })
                     );
             } else {
                 ILiquidLaneAdapter(route.adapter)
