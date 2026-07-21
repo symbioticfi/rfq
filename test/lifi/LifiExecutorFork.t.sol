@@ -9,6 +9,7 @@ import {ILiquidLaneLifiExecutor} from "../../src/lifi/interfaces/ILiquidLaneLifi
 import {MandateOutput} from "../../src/lifi/interfaces/IOutputSettler.sol";
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {Test} from "forge-std/Test.sol";
 
 interface IInputSettlerEscrowLike {
@@ -24,6 +25,7 @@ contract LifiExecutorForkTest is Test {
     address internal user = makeAddr("user");
     address internal owner = makeAddr("owner");
     address internal recipient = makeAddr("recipient");
+    address internal proxyAdminOwner = makeAddr("proxyAdminOwner");
 
     ForkTestToken internal inputToken;
     ForkTestToken internal outputToken;
@@ -41,16 +43,19 @@ contract LifiExecutorForkTest is Test {
         outputToken = new ForkTestToken("Fork USD", "FUSD");
         adapter = new ForkMintingAdapter(outputToken);
 
-        executor = new LiquidLaneLifiExecutor(INPUT_SETTLER, OUTPUT_SETTLER, owner);
+        LiquidLaneLifiExecutor impl = new LiquidLaneLifiExecutor(INPUT_SETTLER, OUTPUT_SETTLER);
+        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
+            address(impl), proxyAdminOwner, abi.encodeCall(LiquidLaneLifiExecutor.initialize, (owner))
+        );
+        executor = LiquidLaneLifiExecutor(address(proxy));
     }
 
     function testExecutorFinalisesOpenedOrderOnRealSettler() external {
         IInputSettler.StandardOrder memory order = _openOrder(10 ether, 9 ether, "executor");
         bytes32 orderId = IInputSettlerEscrowLike(INPUT_SETTLER).orderIdentifier(order);
-        bytes memory call = _fillCall(order, orderId);
 
         vm.prank(owner);
-        executor.finaliseWithCurrentTimestamp(order, call);
+        executor.finaliseWithCurrentTimestamp(order, _routes(order));
 
         assertEq(IInputSettlerEscrowLike(INPUT_SETTLER).orderStatus(orderId), 2, "claimed");
         assertEq(outputToken.balanceOf(recipient), 9 ether, "recipient output");
@@ -105,13 +110,16 @@ contract LifiExecutorForkTest is Test {
         });
     }
 
-    function _fillCall(IInputSettler.StandardOrder memory order, bytes32 orderId) internal view returns (bytes memory) {
-        ILiquidLaneLifiExecutor.FillRoute[] memory routes = new ILiquidLaneLifiExecutor.FillRoute[](1);
+    function _routes(IInputSettler.StandardOrder memory order)
+        internal
+        view
+        returns (ILiquidLaneLifiExecutor.FillRoute[] memory routes)
+    {
+        routes = new ILiquidLaneLifiExecutor.FillRoute[](1);
         routes[0] = ILiquidLaneLifiExecutor.FillRoute({
             adapter: address(adapter),
             amountIn: order.inputs[0][1],
-            expectedAmountOut: 10 ether,
-            minAmountOut: 10 ether,
+            amountOut: 10 ether,
             discount: ILiquidLaneLifiExecutor.FillDiscount({
                 discountId: bytes32(0),
                 discountSwap: ILiquidLaneAdapter.DiscountSwap({
@@ -129,15 +137,6 @@ contract LifiExecutorForkTest is Test {
                 protocolSignature: ""
             })
         });
-        return abi.encode(
-            ILiquidLaneLifiExecutor.FillCall({
-                orderId: orderId,
-                output: order.outputs[0],
-                fillDeadline: order.fillDeadline,
-                fillAfter: 0,
-                routes: routes
-            })
-        );
     }
 
     function _id(address addr) internal pure returns (bytes32) {
@@ -150,18 +149,6 @@ contract ForkMintingAdapter is ILiquidLaneAdapter {
 
     constructor(ForkTestToken outputToken_) {
         outputToken = outputToken_;
-    }
-
-    function getAmountOut(address, uint256 amountIn) external pure returns (uint256) {
-        return amountIn;
-    }
-
-    function getMaxAssets(address) external pure returns (uint256) {
-        return type(uint256).max;
-    }
-
-    function minDiscount(address) external pure returns (uint256) {
-        return 0;
     }
 
     function swap(Swap calldata swap_) external {
