@@ -36,7 +36,12 @@ contract ReactorMainnetForkTest is Test {
     Reactor internal reactor;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("ETH_RPC_URL"));
+        string memory rpcUrl = vm.envOr("ETH_RPC_URL", string(""));
+        if (bytes(rpcUrl).length == 0) {
+            vm.skip(true);
+        }
+
+        vm.createSelectFork(rpcUrl);
         vm.etch(swapper, "");
 
         adapter = new ForkMockAdapter();

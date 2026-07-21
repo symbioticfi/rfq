@@ -4,13 +4,7 @@
 [submodule "lib/openzeppelin-contracts"]
 	path = lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
-[submodule "lib/core-mirror"]
-	path = lib/core-mirror
-	url = https://github.com/symbioticfi/core-mirror
+[submodule "lib/core"]
+	path = lib/core
+	url = https://github.com/symbioticfi/core
 	branch = delegator-simplify
-[submodule "lib/grunt"]
-	path = lib/grunt
-	url = https://github.com/3FLabs/grunt
-[submodule "lib/3f-request-whitelist"]
-	path = lib/3f-request-whitelist
-	url = https://github.com/3FLabs/3f-request-whitelist
