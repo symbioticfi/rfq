@@ -6,6 +6,7 @@ This directory contains the core RFQ settlement contracts used by the Symbiotic 
 
 - `Reactor.sol` validates the signed order, pulls approved input from the swapper directly into factory-registered LiquidLane adapters, and enforces output delivery.
 - `Executor.sol` is an example role-gated execution surface that calls the Reactor, performs adapter swaps, runs any post-swap execution payload, and approves output transfers back to the Reactor.
+- `LiquidLaneUniswapXExecutor.sol` fills ERC-20 UniswapX orders through its Reactor callback using owner-managed callers, matching the RFQ executor access model. The executor contract remains the Reactor-facing filler, while callers select LiquidLane routes. Routes may consume less than a Dutch order's resolved input; the positive difference remains in the executor as filler surplus.
 
 > [!NOTE]
 >
@@ -15,6 +16,7 @@ This directory contains the core RFQ settlement contracts used by the Symbiotic 
 
 - [Reactor.sol](src/Reactor.sol)
 - [Executor.sol](src/Executor.sol)
+- [LiquidLaneUniswapXExecutor.sol](src/uniswapx/LiquidLaneUniswapXExecutor.sol)
 
 ## Flow
 
