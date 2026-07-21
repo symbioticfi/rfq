@@ -41,7 +41,9 @@ contract LifiExecutorForkTest is Test {
         outputToken = new ForkTestToken("Fork USD", "FUSD");
         adapter = new ForkMintingAdapter(outputToken);
 
-        executor = new LiquidLaneLifiExecutor(INPUT_SETTLER, OUTPUT_SETTLER, owner);
+        address[] memory callers = new address[](1);
+        callers[0] = owner;
+        executor = new LiquidLaneLifiExecutor(INPUT_SETTLER, OUTPUT_SETTLER, owner, callers);
     }
 
     function testExecutorFinalisesOpenedOrderOnRealSettler() external {

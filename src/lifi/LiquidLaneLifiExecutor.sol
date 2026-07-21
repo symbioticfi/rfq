@@ -43,13 +43,32 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     /// @inheritdoc ILiquidLaneLifiExecutor
     address public immutable OUTPUT_SETTLER;
 
+    /* STATE VARIABLES */
+
+    /// @inheritdoc ILiquidLaneLifiExecutor
+    address[] public callers;
+
     /* CONSTRUCTOR */
 
-    constructor(address inputSettler, address outputSettler, address owner_) Ownable(owner_) {
+    constructor(address inputSettler, address outputSettler, address owner_, address[] memory initCallers)
+        Ownable(owner_)
+    {
         if (inputSettler == address(0) || outputSettler == address(0) || owner_ == address(0)) revert ZeroAddress();
 
         INPUT_SETTLER = inputSettler;
         OUTPUT_SETTLER = outputSettler;
+        callers = initCallers;
+    }
+
+    /* MODIFIERS */
+
+    /// @dev Reverts unless the caller is in the allowed caller list.
+    modifier onlyCaller() {
+        if (!_isCaller(msg.sender)) {
+            revert NotCaller();
+        }
+
+        _;
     }
 
     /* FINALISE WRAPPER */
@@ -66,9 +85,14 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     }
 
     /// @inheritdoc ILiquidLaneLifiExecutor
+    function isCaller(address caller) external view returns (bool) {
+        return _isCaller(caller);
+    }
+
+    /// @inheritdoc ILiquidLaneLifiExecutor
     function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, bytes calldata call)
         external
-        onlyOwner
+        onlyCaller
     {
         ILiquidLaneLifiExecutor.FillCall memory fillCall = abi.decode(call, (ILiquidLaneLifiExecutor.FillCall));
         bytes32 orderId = _validateFinaliseCall(order, fillCall);
@@ -133,6 +157,13 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     /* OWNER */
 
     /// @inheritdoc ILiquidLaneLifiExecutor
+    function setCallers(address[] calldata newCallers) public onlyOwner {
+        callers = newCallers;
+
+        emit SetCallers(newCallers);
+    }
+
+    /// @inheritdoc ILiquidLaneLifiExecutor
     function sweepERC20(address token, address to, uint256 amount) external onlyOwner nonReentrant {
         if (token == address(0) || to == address(0)) revert ZeroAddress();
 
@@ -159,6 +190,16 @@ contract LiquidLaneLifiExecutor is Ownable, ReentrancyGuard, ILiquidLaneLifiExec
     }
 
     /* INTERNAL */
+
+    /// @dev Returns whether `caller` can invoke the finalise entrypoint.
+    function _isCaller(address caller) internal view returns (bool) {
+        for (uint256 i; i < callers.length; ++i) {
+            if (callers[i] == caller) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     function _validateFinaliseCall(
         IInputSettler.StandardOrder calldata order,

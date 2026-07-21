@@ -37,6 +37,7 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
     error InvalidOutputSettler();
     error InvalidRouteOutputBounds(uint256 expectedAmountOut, uint256 minAmountOut);
     error NativeOutputUnsupported();
+    error NotCaller();
     error NotInputSettler();
     error PrivateRouteExceedsCapacity(address adapter, uint256 amountOut, uint256 maxAssets);
     error RouteInputMismatch(uint256 routedAmountIn, uint256 orderAmountIn);
@@ -102,6 +103,7 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
         uint256 amountOut,
         bytes32 discountId
     );
+    event SetCallers(address[] newCallers);
     event OutputFilled(
         bytes32 indexed orderId,
         bytes32 indexed solver,
@@ -117,8 +119,11 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
 
     function INPUT_SETTLER() external view returns (address inputSettler);
     function OUTPUT_SETTLER() external view returns (address outputSettler);
+    function callers(uint256 index) external view returns (address caller);
     function expectedOutput(FillCall calldata fillCall) external pure returns (uint256 expectedAmountOut);
     function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, bytes calldata call) external;
+    function isCaller(address caller) external view returns (bool allowed);
+    function setCallers(address[] calldata newCallers) external;
     function sweepERC20(address token, address to, uint256 amount) external;
     function sweepNative(address to, uint256 amount) external;
 }

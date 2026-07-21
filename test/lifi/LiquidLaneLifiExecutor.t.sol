@@ -46,7 +46,7 @@ contract LiquidLaneLifiExecutorTest is Test {
         outputSettler = new MockOutputSettler();
         inputSettler.setOrderStatus(ORDER_ID, ORDER_STATUS_DEPOSITED);
 
-        executor = new LiquidLaneLifiExecutor(address(inputSettler), address(outputSettler), owner);
+        executor = new LiquidLaneLifiExecutor(address(inputSettler), address(outputSettler), owner, _callers(owner));
 
         outputToken.mint(address(adapter), 100 ether);
     }
@@ -104,19 +104,48 @@ contract LiquidLaneLifiExecutorTest is Test {
         executor.finaliseWithCurrentTimestamp(order, _fillCallData(orderId, 9 ether));
     }
 
-    function testFinaliseWithCurrentTimestampRejectsNonOwner() public {
+    function testFinaliseWithCurrentTimestampRejectsUnauthorizedCaller() public {
         address caller = makeAddr("caller");
         IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
 
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", caller));
+        vm.expectRevert(ILiquidLaneLifiExecutor.NotCaller.selector);
         vm.prank(caller);
         executor.finaliseWithCurrentTimestamp(order, _fillCallData(_orderId(order), 9 ether));
     }
 
+    function testSetCallersAllowsNonOwnerToFinaliseAndRevokesOldCaller() public {
+        address caller = makeAddr("caller");
+        executor.setCallers(_callers(caller));
+
+        assertTrue(executor.isCaller(caller));
+        assertFalse(executor.isCaller(owner));
+
+        rwa.mint(address(inputSettler), 20 ether);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _orderId(order);
+        inputSettler.setOrderStatus(orderId, ORDER_STATUS_DEPOSITED);
+
+        vm.prank(caller);
+        executor.finaliseWithCurrentTimestamp(order, _fillCallData(orderId, 9 ether));
+
+        IInputSettler.StandardOrder memory secondOrder = _order(10 ether, 8 ether);
+        vm.expectRevert(ILiquidLaneLifiExecutor.NotCaller.selector);
+        executor.finaliseWithCurrentTimestamp(secondOrder, _fillCallData(_orderId(secondOrder), 8 ether));
+    }
+
+    function testSetCallersRejectsNonOwner() public {
+        address caller = makeAddr("caller");
+
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", caller));
+        vm.prank(caller);
+        executor.setCallers(_callers(caller));
+    }
+
     function testIsValidSignatureAcceptsOwner() public {
         uint256 ownerKey = 0xA11CE;
-        LiquidLaneLifiExecutor ownedExecutor =
-            new LiquidLaneLifiExecutor(address(inputSettler), address(outputSettler), vm.addr(ownerKey));
+        LiquidLaneLifiExecutor ownedExecutor = new LiquidLaneLifiExecutor(
+            address(inputSettler), address(outputSettler), vm.addr(ownerKey), new address[](0)
+        );
         bytes32 digest = keccak256("lifi registration");
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
 
@@ -124,8 +153,9 @@ contract LiquidLaneLifiExecutorTest is Test {
     }
 
     function testIsValidSignatureRejectsOtherSigner() public {
-        LiquidLaneLifiExecutor ownedExecutor =
-            new LiquidLaneLifiExecutor(address(inputSettler), address(outputSettler), vm.addr(0xA11CE));
+        LiquidLaneLifiExecutor ownedExecutor = new LiquidLaneLifiExecutor(
+            address(inputSettler), address(outputSettler), vm.addr(0xA11CE), new address[](0)
+        );
         bytes32 digest = keccak256("lifi registration");
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xB0B, digest);
 
@@ -133,8 +163,9 @@ contract LiquidLaneLifiExecutorTest is Test {
     }
 
     function testIsValidSignatureRejectsMalformedSignature() public {
-        LiquidLaneLifiExecutor ownedExecutor =
-            new LiquidLaneLifiExecutor(address(inputSettler), address(outputSettler), vm.addr(0xA11CE));
+        LiquidLaneLifiExecutor ownedExecutor = new LiquidLaneLifiExecutor(
+            address(inputSettler), address(outputSettler), vm.addr(0xA11CE), new address[](0)
+        );
 
         assertEq(ownedExecutor.isValidSignature(keccak256("lifi registration"), hex"deadbeef"), bytes4(0xffffffff));
     }
@@ -936,6 +967,11 @@ contract LiquidLaneLifiExecutorTest is Test {
 
     function _id(address addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(addr)));
+    }
+
+    function _callers(address caller) internal pure returns (address[] memory result) {
+        result = new address[](1);
+        result[0] = caller;
     }
 
     function _dutchContext(uint32 startTime, uint32 stopTime, uint256 slope) internal pure returns (bytes memory) {
