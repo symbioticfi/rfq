@@ -16,6 +16,8 @@ contract DeployLifiExecutorScript is DeployLifiExecutorBaseScript {
     address public constant ADMIN = 0x0000000000000000000000000000000000000000;
     // Owner of the proxy's ProxyAdmin, authorized to upgrade. Defaults to the sender when left zero.
     address public constant PROXY_ADMIN_OWNER = 0x0000000000000000000000000000000000000000;
+    // Initial caller allowed to invoke finalise and register with LI.FI. Defaults to the sender when left zero.
+    address public constant CALLER = 0x0000000000000000000000000000000000000000;
 
     function run() public returns (DeploymentData memory data) {
         address owner = _scriptOwner();
@@ -24,7 +26,8 @@ contract DeployLifiExecutorScript is DeployLifiExecutorBaseScript {
                 inputSettler: INPUT_SETTLER,
                 outputSettler: OUTPUT_SETTLER,
                 admin: ADMIN == address(0) ? owner : ADMIN,
-                proxyAdminOwner: PROXY_ADMIN_OWNER == address(0) ? owner : PROXY_ADMIN_OWNER
+                proxyAdminOwner: PROXY_ADMIN_OWNER == address(0) ? owner : PROXY_ADMIN_OWNER,
+                caller: CALLER == address(0) ? owner : CALLER
             })
         );
     }

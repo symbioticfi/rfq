@@ -40,7 +40,11 @@ contract DeployExecutorTest is Test {
         DeployLifiExecutorBaseHarness harness = new DeployLifiExecutorBaseHarness();
         DeployLifiExecutorBaseScript.DeploymentData memory data = harness.runBase(
             DeployLifiExecutorBaseScript.DeployParams({
-                inputSettler: inputSettler, outputSettler: outputSettler, admin: admin, proxyAdminOwner: proxyAdminOwner
+                inputSettler: inputSettler,
+                outputSettler: outputSettler,
+                admin: admin,
+                proxyAdminOwner: proxyAdminOwner,
+                caller: caller
             })
         );
 
@@ -48,9 +52,12 @@ contract DeployExecutorTest is Test {
         assertEq(data.executor.owner(), admin);
         assertEq(data.executor.INPUT_SETTLER(), inputSettler);
         assertEq(data.executor.OUTPUT_SETTLER(), outputSettler);
+        assertTrue(data.executor.isCaller(caller));
 
+        address[] memory callers = new address[](1);
+        callers[0] = caller;
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        LiquidLaneLifiExecutor(data.implementation).initialize(admin);
+        LiquidLaneLifiExecutor(data.implementation).initialize(admin, callers);
     }
 }
 

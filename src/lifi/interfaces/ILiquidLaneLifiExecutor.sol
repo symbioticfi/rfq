@@ -16,7 +16,12 @@ import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
     /* ERRORS */
 
+    error NotCaller();
     error NotInputSettler();
+
+    /* EVENTS */
+
+    event SetCallers(address[] newCallers);
 
     /* STRUCTS */
 
@@ -65,7 +70,11 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
 
     function INPUT_SETTLER() external view returns (address inputSettler);
     function OUTPUT_SETTLER() external view returns (address outputSettler);
-    function initialize(address owner) external;
+    function callers(uint256 index) external view returns (address caller);
+    function initialize(address owner, address[] calldata initCallers) external;
     function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, FillRoute[] calldata routes)
         external;
+    function isCaller(address caller) external view returns (bool allowed);
+    function lifiRegistrationDigest(bytes32 messageHash) external view returns (bytes32 digest);
+    function setCallers(address[] calldata newCallers) external;
 }

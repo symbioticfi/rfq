@@ -13,6 +13,7 @@ contract DeployLifiExecutorBaseScript is Script {
         address outputSettler;
         address admin;
         address proxyAdminOwner;
+        address caller;
     }
 
     struct DeploymentData {
@@ -22,17 +23,21 @@ contract DeployLifiExecutorBaseScript is Script {
         address outputSettler;
         address admin;
         address proxyAdminOwner;
+        address caller;
     }
 
     function runBase(DeployParams memory params) public virtual returns (DeploymentData memory data) {
         _validateParams(params);
+
+        address[] memory callers = new address[](1);
+        callers[0] = params.caller;
 
         _startBroadcast();
         LiquidLaneLifiExecutor implementation = new LiquidLaneLifiExecutor(params.inputSettler, params.outputSettler);
         TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
             address(implementation),
             params.proxyAdminOwner,
-            abi.encodeCall(LiquidLaneLifiExecutor.initialize, (params.admin))
+            abi.encodeCall(LiquidLaneLifiExecutor.initialize, (params.admin, callers))
         );
         _stopBroadcast();
 
@@ -42,6 +47,7 @@ contract DeployLifiExecutorBaseScript is Script {
         data.outputSettler = params.outputSettler;
         data.admin = params.admin;
         data.proxyAdminOwner = params.proxyAdminOwner;
+        data.caller = params.caller;
 
         _validateDeployment(data);
         _logDeployment(data);
@@ -65,12 +71,14 @@ contract DeployLifiExecutorBaseScript is Script {
         require(params.outputSettler != address(0), "invalid output settler");
         require(params.admin != address(0), "invalid admin");
         require(params.proxyAdminOwner != address(0), "invalid proxy admin owner");
+        require(params.caller != address(0), "invalid caller");
     }
 
     function _validateDeployment(DeploymentData memory data) internal view {
         assert(data.executor.owner() == data.admin);
         assert(data.executor.INPUT_SETTLER() == data.inputSettler);
         assert(data.executor.OUTPUT_SETTLER() == data.outputSettler);
+        assert(data.executor.isCaller(data.caller));
     }
 
     function _logDeployment(DeploymentData memory data) internal view {
@@ -81,5 +89,6 @@ contract DeployLifiExecutorBaseScript is Script {
         console2.log("  outputSettler:   ", data.outputSettler);
         console2.log("  admin:           ", data.admin);
         console2.log("  proxyAdminOwner: ", data.proxyAdminOwner);
+        console2.log("  caller:          ", data.caller);
     }
 }

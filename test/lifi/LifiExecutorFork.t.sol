@@ -43,9 +43,11 @@ contract LifiExecutorForkTest is Test {
         outputToken = new ForkTestToken("Fork USD", "FUSD");
         adapter = new ForkMintingAdapter(outputToken);
 
+        address[] memory callers = new address[](1);
+        callers[0] = owner;
         LiquidLaneLifiExecutor impl = new LiquidLaneLifiExecutor(INPUT_SETTLER, OUTPUT_SETTLER);
         TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
-            address(impl), proxyAdminOwner, abi.encodeCall(LiquidLaneLifiExecutor.initialize, (owner))
+            address(impl), proxyAdminOwner, abi.encodeCall(LiquidLaneLifiExecutor.initialize, (owner, callers))
         );
         executor = LiquidLaneLifiExecutor(address(proxy));
     }
