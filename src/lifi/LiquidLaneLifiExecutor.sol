@@ -71,10 +71,11 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     }
 
     /// @inheritdoc ILiquidLaneLifiExecutor
-    function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, FillRoute[] calldata routes)
-        external
-        onlyCaller
-    {
+    function finaliseWithCurrentTimestamp(
+        IInputSettler.StandardOrder calldata order,
+        FillRoute[] calldata routes,
+        DiscountRoute[] calldata discountRoutes
+    ) external onlyCaller {
         bytes32 executorId = bytes32(uint256(uint160(address(this))));
         IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
         solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
@@ -88,7 +89,8 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
                     orderId: IInputSettler(INPUT_SETTLER).orderIdentifier(order),
                     output: order.outputs[0],
                     fillDeadline: order.fillDeadline,
-                    routes: routes
+                    routes: routes,
+                    discountRoutes: discountRoutes
                 })
                 )
             );
@@ -107,22 +109,21 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         address tokenIn = address(uint160(inputs[0][0]));
         uint256 routesLength = fillCall.routes.length;
         for (uint256 i; i < routesLength; ++i) {
-            IERC20(tokenIn).safeTransfer(fillCall.routes[i].adapter, fillCall.routes[i].amountIn);
-        }
-
-        for (uint256 i; i < routesLength; ++i) {
             FillRoute memory route = fillCall.routes[i];
-            if (route.discount.discountId == bytes32(0)) {
-                ILiquidLaneAdapter(route.adapter)
-                    .swap(
-                        ILiquidLaneAdapter.Swap({
-                        recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
-                    })
-                    );
-            } else {
-                ILiquidLaneAdapter(route.adapter)
-                    .swap(route.discount.discountSwap, route.discount.protocolSignature, address(this), route.amountIn);
-            }
+            IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            ILiquidLaneAdapter(route.adapter)
+                .swap(
+                    ILiquidLaneAdapter.Swap({
+                    recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
+                })
+                );
+        }
+        uint256 discountRoutesLength = fillCall.discountRoutes.length;
+        for (uint256 i; i < discountRoutesLength; ++i) {
+            DiscountRoute memory route = fillCall.discountRoutes[i];
+            IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            ILiquidLaneAdapter(route.adapter)
+                .swap(route.discountSwap, route.protocolSignature, address(this), route.amountIn);
         }
 
         // The output settler resolves the context-dependent amount it is owed and pulls it,

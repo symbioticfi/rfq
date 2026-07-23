@@ -26,30 +26,29 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
     /* STRUCTS */
 
     /**
-     * @notice Optional private-discount authorization for one route.
-     * @param discountId Backend discount identifier; zero selects the direct swap path.
-     * @param discountSwap Reusable signer policy plus the fresh protocol deadline.
-     * @param protocolSignature Fresh protocol cosign verified by the LiquidLane adapter.
-     */
-    struct FillDiscount {
-        bytes32 discountId;
-        ILiquidLaneAdapter.DiscountSwap discountSwap;
-        bytes protocolSignature;
-    }
-
-    /**
-     * @notice One atomic LiquidLane redemption leg.
+     * @notice One atomic direct-swap LiquidLane redemption leg.
      * @param adapter LiquidLane adapter selected by the solver.
      * @param amountIn Order-input amount routed to the adapter.
-     * @param amountOut Output amount requested from the adapter on the direct swap path;
-     * unused for discount routes, where the signed discount terms set the output.
-     * @param discount Optional private-discount authorization; zero id means direct swap.
+     * @param amountOut Output amount requested from the adapter.
      */
     struct FillRoute {
         address adapter;
         uint256 amountIn;
         uint256 amountOut;
-        FillDiscount discount;
+    }
+
+    /**
+     * @notice One atomic discount-backed LiquidLane redemption leg.
+     * @param adapter LiquidLane adapter selected by the solver.
+     * @param amountIn Order-input amount routed to the adapter.
+     * @param discountSwap Reusable signer policy plus the fresh protocol deadline.
+     * @param protocolSignature Fresh protocol cosign verified by the LiquidLane adapter.
+     */
+    struct DiscountRoute {
+        address adapter;
+        uint256 amountIn;
+        ILiquidLaneAdapter.DiscountSwap discountSwap;
+        bytes protocolSignature;
     }
 
     /**
@@ -57,13 +56,15 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
      * @param orderId OIF order id.
      * @param output Single output to fill and attest.
      * @param fillDeadline Fill deadline carried by the order.
-     * @param routes LiquidLane legs selected by the solver.
+     * @param routes Direct-swap LiquidLane legs selected by the solver.
+     * @param discountRoutes Discount-backed LiquidLane legs selected by the solver.
      */
     struct FillCall {
         bytes32 orderId;
         MandateOutput output;
         uint32 fillDeadline;
         FillRoute[] routes;
+        DiscountRoute[] discountRoutes;
     }
 
     /* FUNCTIONS */
@@ -72,8 +73,11 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
     function OUTPUT_SETTLER() external view returns (address outputSettler);
     function callers(uint256 index) external view returns (address caller);
     function initialize(address owner, address[] calldata initCallers) external;
-    function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, FillRoute[] calldata routes)
-        external;
+    function finaliseWithCurrentTimestamp(
+        IInputSettler.StandardOrder calldata order,
+        FillRoute[] calldata routes,
+        DiscountRoute[] calldata discountRoutes
+    ) external;
     function isCaller(address caller) external view returns (bool allowed);
     function lifiRegistrationDigest(bytes32 messageHash) external view returns (bytes32 digest);
     function setCallers(address[] calldata newCallers) external;
