@@ -6,7 +6,7 @@ This directory contains the core RFQ settlement contracts used by the Symbiotic 
 
 - `Reactor.sol` validates the signed order, pulls approved input from the swapper directly into factory-registered LiquidLane adapters, and enforces output delivery.
 - `Executor.sol` is an example role-gated execution surface that calls the Reactor, performs adapter swaps, runs any post-swap execution payload, and approves output transfers back to the Reactor.
-- `LiquidLaneUniswapXExecutor.sol` fills ERC-20 UniswapX orders through its Reactor callback using owner-managed callers, matching the RFQ executor access model. The executor contract remains the Reactor-facing filler, while callers select LiquidLane routes. Routes may consume less than a Dutch order's resolved input; the positive difference remains in the executor as filler surplus.
+- `LiquidLaneUniswapXExecutor.sol` is a transparent-proxy, caller-gated UniswapX fill contract. It routes Reactor-supplied ERC-20 input through direct and discount LiquidLane adapters, grants the immutable Reactor output allowances, and forwards native output. The Reactor authoritatively resolves and settles orders; adapters enforce swap and discount terms. Direct and discount route arrays remain separate, and unspent input or output surplus remains on the executor. Because the Reactor has maximum ERC-20 allowances, retained balances can participate in subsequent Reactor settlement; there is no sweep entrypoint.
 
 > [!NOTE]
 >
@@ -42,6 +42,7 @@ The repository includes helper scripts for deploying the Reactor and the example
 
 - `script/deploy/DeployExecutor.s.sol`
 - `script/deploy/DeployReactor.s.sol`
+- `script/DeployUniswapXExecutor.s.sol`
 
 Example `Executor` deployment:
 
@@ -50,6 +51,15 @@ REACTOR=0x... \
 ADMIN=0x... \
 CALLER=0x... \
 forge script script/deploy/DeployExecutor.s.sol:DeployExecutorScript \
+  --rpc-url "$RPC_URL" \
+  --private-key "$PRIVATE_KEY" \
+  --broadcast
+```
+
+UniswapX executor deployment expects `UNISWAPX_REACTOR` to be exported. `ADMIN`, `PROXY_ADMIN_OWNER`, and `CALLER` are optional and default to the broadcaster:
+
+```bash
+forge script script/DeployUniswapXExecutor.s.sol:DeployUniswapXExecutorScript \
   --rpc-url "$RPC_URL" \
   --private-key "$PRIVATE_KEY" \
   --broadcast

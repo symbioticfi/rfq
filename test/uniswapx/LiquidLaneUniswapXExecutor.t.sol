@@ -15,260 +15,259 @@ import {
     UniswapXSignedOrder
 } from "../../src/uniswapx/interfaces/IUniswapXReactor.sol";
 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {Test} from "forge-std/Test.sol";
 
 contract LiquidLaneUniswapXExecutorTest is Test {
+    using Address for address payable;
+
     address internal caller = makeAddr("caller");
     address internal owner = makeAddr("owner");
+    address internal proxyAdminOwner = makeAddr("proxyAdminOwner");
     address internal recipient = makeAddr("recipient");
-    address internal feeRecipient = makeAddr("feeRecipient");
 
     TestToken internal inputToken;
     TestToken internal outputToken;
     MockUniswapXAdapter internal adapter;
     MockUniswapXReactor internal reactor;
+    LiquidLaneUniswapXExecutor internal implementation;
     LiquidLaneUniswapXExecutor internal executor;
 
     function setUp() public {
         inputToken = new TestToken("Input", "IN");
         outputToken = new TestToken("Output", "OUT");
-        adapter = new MockUniswapXAdapter(outputToken);
+        adapter = new MockUniswapXAdapter(address(outputToken));
         reactor = new MockUniswapXReactor();
 
-        executor = new LiquidLaneUniswapXExecutor(address(reactor), owner, _callers(caller));
+        implementation = new LiquidLaneUniswapXExecutor(address(reactor));
+        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
+            address(implementation),
+            proxyAdminOwner,
+            abi.encodeCall(LiquidLaneUniswapXExecutor.initialize, (owner, _callers(caller)))
+        );
+        executor = LiquidLaneUniswapXExecutor(payable(address(proxy)));
 
         inputToken.mint(address(reactor), 10 ether);
         outputToken.mint(address(adapter), 100 ether);
-        reactor.setOrder(_resolvedOrder(10 ether, 9 ether));
+        reactor.setOrder(_resolvedOrder(10 ether, _erc20Outputs(address(outputToken), 9 ether, recipient)));
     }
 
-    function testExecuteFillsThroughReactorCallback() public {
-        vm.prank(caller);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(10 ether, 9 ether));
-
-        assertEq(inputToken.balanceOf(address(adapter)), 10 ether);
-        assertEq(outputToken.balanceOf(recipient), 9 ether);
-        assertEq(outputToken.balanceOf(address(executor)), 0);
-        assertEq(outputToken.allowance(address(executor), address(reactor)), 0);
+    function testInitializeSetsOwnerAndCallers() public view {
+        assertEq(executor.owner(), owner);
+        assertEq(executor.callers(0), caller);
     }
 
-    function testExecuteKeepsDirectRouteSurplus() public {
-        vm.prank(caller);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(10 ether, 10 ether));
-
-        assertEq(outputToken.balanceOf(recipient), 9 ether);
-        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
-        assertEq(outputToken.allowance(address(executor), address(reactor)), 0);
+    function testInitializeCannotBeCalledTwice() public {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        executor.initialize(makeAddr("intruder"), _callers(makeAddr("intruderCaller")));
     }
 
-    function testExecuteFillsSignedDiscountRoute() public {
-        vm.prank(caller);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _discountFillCall(10 ether, 9 ether));
-
-        assertEq(inputToken.balanceOf(address(adapter)), 10 ether);
-        assertEq(outputToken.balanceOf(recipient), 9 ether);
-        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
-        assertEq(outputToken.allowance(address(executor), address(reactor)), 0);
+    function testImplementationInitializerIsDisabled() public {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        implementation.initialize(owner, _callers(caller));
     }
 
-    function testExecuteFillsSameTokenFeeOutputs() public {
-        reactor.setOrder(_resolvedMultiOutputOrder(10 ether, 8 ether, 1 ether));
-
-        vm.prank(caller);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(10 ether, 9 ether));
-
-        assertEq(outputToken.balanceOf(recipient), 8 ether);
-        assertEq(outputToken.balanceOf(feeRecipient), 1 ether);
-        assertEq(outputToken.balanceOf(address(executor)), 0);
-        assertEq(outputToken.allowance(address(executor), address(reactor)), 0);
-    }
-
-    function testExecuteRejectsMixedOutputTokens() public {
-        TestToken otherOutput = new TestToken("Other Output", "OTHER");
-        UniswapXResolvedOrder memory order = _resolvedMultiOutputOrder(10 ether, 8 ether, 1 ether);
-        order.outputs[1].token = address(otherOutput);
-        reactor.setOrder(order);
-
-        vm.prank(caller);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ILiquidLaneUniswapXExecutor.OutputTokenMismatch.selector, address(outputToken), address(otherOutput)
-            )
-        );
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(10 ether, 9 ether));
-    }
-
-    function testExecuteRejectsDiscountAdapterThatOverreportsOutput() public {
-        adapter.setAmountOut(8 ether);
-        adapter.setReportedAmountOut(10 ether);
-
-        vm.prank(caller);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ILiquidLaneUniswapXExecutor.RouteOutputTooLow.selector, address(adapter), 9 ether, 8 ether
-            )
-        );
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _discountFillCall(10 ether, 9 ether));
-    }
-
-    function testExecuteRejectsNonCaller() public {
+    function testExecuteRejectsOwnerWhenOwnerIsNotCaller() public {
+        vm.prank(owner);
         vm.expectRevert(ILiquidLaneUniswapXExecutor.NotCaller.selector);
-        vm.prank(makeAddr("relayer"));
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(10 ether, 9 ether));
+        executor.execute(_signedOrder(), _emptyFillCall());
     }
 
-    function testOwnerCanReplaceCallers() public {
+    function testSetCallersAllowsNewCallerAndRevokesOldCaller() public {
         address newCaller = makeAddr("newCaller");
-
+        reactor.setOrder(_resolvedOrder(0, _emptyOutputs()));
         vm.prank(owner);
         executor.setCallers(_callers(newCaller));
 
-        assertEq(executor.callers(0), newCaller);
-        assertTrue(executor.isCaller(newCaller));
-        assertFalse(executor.isCaller(caller));
+        vm.prank(caller);
+        vm.expectRevert(ILiquidLaneUniswapXExecutor.NotCaller.selector);
+        executor.execute(_signedOrder(), _emptyFillCall());
+
         vm.prank(newCaller);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(10 ether, 9 ether));
-        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        executor.execute(_signedOrder(), _emptyFillCall());
     }
 
-    function testOnlyOwnerCanReplaceCallers() public {
-        address relayer = makeAddr("relayer");
-
-        vm.prank(relayer);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, relayer));
-        executor.setCallers(_callers(relayer));
+    function testSetCallersRejectsNonOwner() public {
+        vm.prank(caller);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, caller));
+        executor.setCallers(_callers(caller));
     }
 
-    function testOnlyOwnerCanSweep() public {
-        address relayer = makeAddr("relayer");
-        inputToken.mint(address(executor), 1 ether);
-
-        vm.prank(relayer);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, relayer));
-        executor.sweepERC20(address(inputToken), relayer, 1 ether);
-    }
-
-    function testOwnerCanSweep() public {
-        inputToken.mint(address(executor), 1 ether);
-
-        vm.prank(owner);
-        executor.sweepERC20(address(inputToken), owner, 1 ether);
-
-        assertEq(inputToken.balanceOf(owner), 1 ether);
-    }
-
-    function testCallbackRejectsNonReactor() public {
-        UniswapXResolvedOrder[] memory orders = new UniswapXResolvedOrder[](1);
-        orders[0] = _resolvedOrder(10 ether, 9 ether);
-
+    function testReactorCallbackRejectsNonReactor() public {
+        UniswapXResolvedOrder[] memory orders =
+            _resolvedOrders(_resolvedOrder(10 ether, _erc20Outputs(address(outputToken), 9 ether, recipient)));
         vm.expectRevert(ILiquidLaneUniswapXExecutor.NotReactor.selector);
-        executor.reactorCallback(orders, abi.encode(_fillCall(10 ether, 9 ether)));
+        executor.reactorCallback(orders, abi.encode(_emptyFillCall()));
     }
 
-    function testCallbackRejectsZeroInputToken() public {
-        UniswapXResolvedOrder[] memory orders = new UniswapXResolvedOrder[](1);
-        orders[0] = _resolvedOrder(10 ether, 9 ether);
-        orders[0].input.token = address(0);
-
-        vm.expectRevert(ILiquidLaneUniswapXExecutor.ZeroAddress.selector);
+    function testReactorCallbackRejectsMalformedData() public {
+        UniswapXResolvedOrder[] memory orders =
+            _resolvedOrders(_resolvedOrder(10 ether, _erc20Outputs(address(outputToken), 9 ether, recipient)));
         vm.prank(address(reactor));
-        executor.reactorCallback(orders, abi.encode(_fillCall(10 ether, 9 ether)));
+        vm.expectRevert();
+        executor.reactorCallback(orders, hex"01");
     }
 
-    function testCallbackRejectsZeroOutputToken() public {
-        UniswapXResolvedOrder[] memory orders = new UniswapXResolvedOrder[](1);
-        orders[0] = _resolvedOrder(10 ether, 9 ether);
-        orders[0].outputs[0].token = address(0);
-
-        vm.expectRevert(ILiquidLaneUniswapXExecutor.ZeroAddress.selector);
-        vm.prank(address(reactor));
-        executor.reactorCallback(orders, abi.encode(_fillCall(10 ether, 9 ether)));
-    }
-
-    function testExecuteRejectsInsufficientRouteMinimum() public {
-        vm.prank(caller);
-        vm.expectRevert(
-            abi.encodeWithSelector(ILiquidLaneUniswapXExecutor.InsufficientMinimumOutput.selector, 8 ether, 9 ether)
-        );
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(10 ether, 8 ether));
-    }
-
-    function testExecuteRejectsRouteThatNoLongerMeetsMinimum() public {
-        adapter.setAmountOut(8 ether);
+    function testExecuteRoutesDirectFillAndKeepsInputAndOutputSurplus() public {
+        adapter.setDirectOutput(10 ether);
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        routes[0] = _directRoute(address(adapter), 9 ether, 10 ether);
+        reactor.setOrder(_resolvedOrder(10 ether, _erc20Outputs(address(outputToken), 9 ether, recipient)));
 
         vm.prank(caller);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ILiquidLaneUniswapXExecutor.RouteOutputTooLow.selector, address(adapter), 9 ether, 8 ether
-            )
-        );
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(10 ether, 9 ether));
-    }
+        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
 
-    function testExecuteAcceptsRoutePlannedBeforeExactOutputDecay() public {
-        vm.prank(caller);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(9 ether, 9 ether));
-
-        assertEq(inputToken.balanceOf(address(adapter)), 9 ether);
         assertEq(inputToken.balanceOf(address(executor)), 1 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+        assertEq(outputToken.allowance(address(executor), address(reactor)), type(uint256).max);
+    }
+
+    function testExecuteRoutesMultipleDirectFillsAndSettlesMixedErc20Outputs() public {
+        TestToken secondOutput = new TestToken("Second Output", "OUT2");
+        MockUniswapXAdapter secondAdapter = new MockUniswapXAdapter(address(secondOutput));
+        address secondRecipient = makeAddr("secondRecipient");
+        adapter.setDirectOutput(4 ether);
+        secondAdapter.setDirectOutput(6 ether);
+        outputToken.mint(address(adapter), 4 ether);
+        secondOutput.mint(address(secondAdapter), 6 ether);
+
+        UniswapXOutputToken[] memory outputs = new UniswapXOutputToken[](2);
+        outputs[0] = UniswapXOutputToken({token: address(outputToken), amount: 4 ether, recipient: recipient});
+        outputs[1] = UniswapXOutputToken({token: address(secondOutput), amount: 5 ether, recipient: secondRecipient});
+        reactor.setOrder(_resolvedOrder(10 ether, outputs));
+
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](2);
+        routes[0] = _directRoute(address(adapter), 4 ether, 4 ether);
+        routes[1] = _directRoute(address(secondAdapter), 6 ether, 6 ether);
+        vm.prank(caller);
+        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+
+        assertEq(outputToken.balanceOf(recipient), 4 ether);
+        assertEq(secondOutput.balanceOf(secondRecipient), 5 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 0);
+        assertEq(secondOutput.balanceOf(address(executor)), 1 ether);
+        assertEq(outputToken.allowance(address(executor), address(reactor)), type(uint256).max);
+        assertEq(secondOutput.allowance(address(executor), address(reactor)), type(uint256).max);
+    }
+
+    function testExecuteRoutesDiscountFill() public {
+        adapter.setDiscountOutput(9 ether);
+        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory discountRoutes =
+            new ILiquidLaneUniswapXExecutor.DiscountRoute[](1);
+        discountRoutes[0] = _discountRoute(address(adapter), 10 ether);
+
+        vm.prank(caller);
+        executor.execute(_signedOrder(), _fillCall(new ILiquidLaneUniswapXExecutor.FillRoute[](0), discountRoutes));
+
+        assertEq(adapter.discountCalls(), 1);
+        assertEq(inputToken.balanceOf(address(adapter)), 10 ether);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
     }
 
-    function testExecuteAcceptsDiscountRoutePlannedBeforeExactOutputDecay() public {
-        vm.prank(caller);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _discountFillCall(9 ether, 9 ether));
+    function testExecuteRoutesDirectAndDiscountFillsTogether() public {
+        MockUniswapXAdapter discountAdapter = new MockUniswapXAdapter(address(outputToken));
+        adapter.setDirectOutput(4 ether);
+        discountAdapter.setDiscountOutput(6 ether);
+        outputToken.mint(address(discountAdapter), 6 ether);
+        reactor.setOrder(_resolvedOrder(10 ether, _erc20Outputs(address(outputToken), 10 ether, recipient)));
 
-        assertEq(inputToken.balanceOf(address(adapter)), 9 ether);
-        assertEq(inputToken.balanceOf(address(executor)), 1 ether);
-        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        routes[0] = _directRoute(address(adapter), 4 ether, 4 ether);
+        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory discountRoutes =
+            new ILiquidLaneUniswapXExecutor.DiscountRoute[](1);
+        discountRoutes[0] = _discountRoute(address(discountAdapter), 6 ether);
+        vm.prank(caller);
+        executor.execute(_signedOrder(), _fillCall(routes, discountRoutes));
+
+        assertEq(adapter.directCalls(), 1);
+        assertEq(discountAdapter.discountCalls(), 1);
+        assertEq(inputToken.balanceOf(address(adapter)), 4 ether);
+        assertEq(inputToken.balanceOf(address(discountAdapter)), 6 ether);
     }
 
-    function testExecuteRejectsInputAboveResolvedAmount() public {
+    function testExecuteKeepsMaxApprovalWithoutReapproving() public {
+        ApprovalCountingToken countingOutput = new ApprovalCountingToken("Counting Output", "COUNT");
+        MockUniswapXAdapter countingAdapter = new MockUniswapXAdapter(address(countingOutput));
+        countingAdapter.setDirectOutput(9 ether);
+        countingOutput.mint(address(countingAdapter), 18 ether);
+        inputToken.mint(address(reactor), 10 ether);
+        reactor.setOrder(_resolvedOrder(10 ether, _erc20Outputs(address(countingOutput), 9 ether, recipient)));
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        routes[0] = _directRoute(address(countingAdapter), 10 ether, 9 ether);
+
+        vm.startPrank(caller);
+        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+        vm.stopPrank();
+
+        assertEq(countingOutput.allowance(address(executor), address(reactor)), type(uint256).max);
+        assertEq(countingOutput.approveCalls(), 1);
+    }
+
+    function testExecuteForwardsNativeOutputAndReceivesReactorRefund() public {
+        MockUniswapXAdapter nativeAdapter = new MockUniswapXAdapter(address(0));
+        reactor.setOrder(_resolvedOrder(10 ether, _nativeOutputs(2 ether, recipient)));
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        routes[0] = _directRoute(address(nativeAdapter), 10 ether, 0);
+        vm.deal(address(this), 3 ether);
+        payable(address(executor)).sendValue(3 ether);
+        uint256 recipientBalanceBefore = recipient.balance;
+
+        vm.prank(caller);
+        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+
+        assertEq(recipient.balance, recipientBalanceBefore + 2 ether);
+        assertEq(address(executor).balance, 1 ether);
+        assertEq(address(reactor).balance, 0);
+    }
+
+    function testExecuteBubblesAdapterRevertAndRollsBack() public {
+        adapter.setShouldRevert(true);
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        routes[0] = _directRoute(address(adapter), 10 ether, 9 ether);
+
+        vm.prank(caller);
+        vm.expectRevert(MockUniswapXAdapter.AdapterFailed.selector);
+        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+
+        assertEq(inputToken.balanceOf(address(reactor)), 10 ether);
+        assertEq(inputToken.balanceOf(address(adapter)), 0);
+        assertEq(outputToken.balanceOf(recipient), 0);
+        assertEq(outputToken.allowance(address(executor), address(reactor)), 0);
+    }
+
+    function testExecuteBubblesReactorOutputShortfallAndRollsBack() public {
+        adapter.setDirectOutput(8 ether);
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        routes[0] = _directRoute(address(adapter), 10 ether, 9 ether);
+
         vm.prank(caller);
         vm.expectRevert(
-            abi.encodeWithSelector(ILiquidLaneUniswapXExecutor.RouteInputExceedsOrder.selector, 11 ether, 10 ether)
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 8 ether, 9 ether)
         );
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), _fillCall(11 ether, 9 ether));
+        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+
+        assertEq(inputToken.balanceOf(address(reactor)), 10 ether);
+        assertEq(inputToken.balanceOf(address(adapter)), 0);
+        assertEq(outputToken.balanceOf(recipient), 0);
+        assertEq(outputToken.allowance(address(executor), address(reactor)), 0);
     }
 
-    function testExecuteRejectsZeroAdapter() public {
-        ILiquidLaneUniswapXExecutor.FillCall memory fillCall = _fillCall(10 ether, 9 ether);
-        fillCall.routes[0].adapter = address(0);
-
-        vm.prank(caller);
-        vm.expectRevert(ILiquidLaneUniswapXExecutor.ZeroAddress.selector);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), fillCall);
+    function _signedOrder() internal pure returns (UniswapXSignedOrder memory) {
+        return UniswapXSignedOrder({order: hex"01", sig: hex"02"});
     }
 
-    function testExecuteRejectsZeroDiscountAdapter() public {
-        ILiquidLaneUniswapXExecutor.FillCall memory fillCall = _discountFillCall(10 ether, 9 ether);
-        fillCall.discountRoutes[0].adapter = address(0);
-
-        vm.prank(caller);
-        vm.expectRevert(ILiquidLaneUniswapXExecutor.ZeroAddress.selector);
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), fillCall);
-    }
-
-    function testExecuteRejectsDiscountForAnotherInputToken() public {
-        ILiquidLaneUniswapXExecutor.FillCall memory fillCall = _discountFillCall(10 ether, 9 ether);
-        fillCall.discountRoutes[0].discountSwap.discount.tokenToRedeem = address(outputToken);
-
-        vm.prank(caller);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                ILiquidLaneUniswapXExecutor.DiscountTokenMismatch.selector, address(inputToken), address(outputToken)
-            )
-        );
-        executor.execute(UniswapXSignedOrder({order: hex"01", sig: hex"02"}), fillCall);
-    }
-
-    function _resolvedOrder(uint256 amountIn, uint256 amountOut) internal returns (UniswapXResolvedOrder memory order) {
-        UniswapXOutputToken[] memory outputs = new UniswapXOutputToken[](1);
-        outputs[0] = UniswapXOutputToken({token: address(outputToken), amount: amountOut, recipient: recipient});
+    function _resolvedOrder(uint256 amountIn, UniswapXOutputToken[] memory outputs)
+        internal
+        returns (UniswapXResolvedOrder memory order)
+    {
         order = UniswapXResolvedOrder({
             info: UniswapXOrderInfo({
                 reactor: address(reactor),
@@ -285,58 +284,71 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         });
     }
 
-    function _callers(address caller) internal pure returns (address[] memory callers_) {
+    function _resolvedOrders(UniswapXResolvedOrder memory order)
+        internal
+        pure
+        returns (UniswapXResolvedOrder[] memory orders)
+    {
+        orders = new UniswapXResolvedOrder[](1);
+        orders[0] = order;
+    }
+
+    function _erc20Outputs(address token, uint256 amount, address outputRecipient)
+        internal
+        pure
+        returns (UniswapXOutputToken[] memory outputs)
+    {
+        outputs = new UniswapXOutputToken[](1);
+        outputs[0] = UniswapXOutputToken({token: token, amount: amount, recipient: outputRecipient});
+    }
+
+    function _nativeOutputs(uint256 amount, address outputRecipient)
+        internal
+        pure
+        returns (UniswapXOutputToken[] memory outputs)
+    {
+        outputs = new UniswapXOutputToken[](1);
+        outputs[0] = UniswapXOutputToken({token: address(0), amount: amount, recipient: outputRecipient});
+    }
+
+    function _emptyOutputs() internal pure returns (UniswapXOutputToken[] memory outputs) {
+        outputs = new UniswapXOutputToken[](0);
+    }
+
+    function _callers(address caller_) internal pure returns (address[] memory callers_) {
         callers_ = new address[](1);
-        callers_[0] = caller;
+        callers_[0] = caller_;
     }
 
-    function _resolvedMultiOutputOrder(uint256 amountIn, uint256 swapperAmountOut, uint256 feeAmountOut)
+    function _emptyFillCall() internal pure returns (ILiquidLaneUniswapXExecutor.FillCall memory fillCall) {
+        fillCall = _fillCall(
+            new ILiquidLaneUniswapXExecutor.FillRoute[](0), new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)
+        );
+    }
+
+    function _fillCall(
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes,
+        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory discountRoutes
+    ) internal pure returns (ILiquidLaneUniswapXExecutor.FillCall memory fillCall) {
+        fillCall = ILiquidLaneUniswapXExecutor.FillCall({routes: routes, discountRoutes: discountRoutes});
+    }
+
+    function _directRoute(address routeAdapter, uint256 amountIn, uint256 amountOut)
         internal
-        returns (UniswapXResolvedOrder memory order)
+        pure
+        returns (ILiquidLaneUniswapXExecutor.FillRoute memory)
     {
-        UniswapXOutputToken[] memory outputs = new UniswapXOutputToken[](2);
-        outputs[0] = UniswapXOutputToken({token: address(outputToken), amount: swapperAmountOut, recipient: recipient});
-        outputs[1] = UniswapXOutputToken({token: address(outputToken), amount: feeAmountOut, recipient: feeRecipient});
-        order = UniswapXResolvedOrder({
-            info: UniswapXOrderInfo({
-                reactor: address(reactor),
-                swapper: makeAddr("swapper"),
-                nonce: 1,
-                deadline: block.timestamp + 1 hours,
-                additionalValidationContract: address(0),
-                additionalValidationData: ""
-            }),
-            input: UniswapXInputToken({token: address(inputToken), amount: amountIn, maxAmount: amountIn}),
-            outputs: outputs,
-            sig: "",
-            hash: keccak256("multi-output-order")
-        });
+        return ILiquidLaneUniswapXExecutor.FillRoute({adapter: routeAdapter, amountIn: amountIn, amountOut: amountOut});
     }
 
-    function _fillCall(uint256 amountIn, uint256 amountOut)
+    function _discountRoute(address routeAdapter, uint256 amountIn)
         internal
         view
-        returns (ILiquidLaneUniswapXExecutor.FillCall memory fillCall)
+        returns (ILiquidLaneUniswapXExecutor.DiscountRoute memory)
     {
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
-        routes[0] = ILiquidLaneUniswapXExecutor.FillRoute({
-            adapter: address(adapter), amountIn: amountIn, amountOut: amountOut
-        });
-        fillCall = ILiquidLaneUniswapXExecutor.FillCall({
-            routes: routes, discountRoutes: new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)
-        });
-    }
-
-    function _discountFillCall(uint256 amountIn, uint256 minAmountOut)
-        internal
-        view
-        returns (ILiquidLaneUniswapXExecutor.FillCall memory fillCall)
-    {
-        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory routes = new ILiquidLaneUniswapXExecutor.DiscountRoute[](1);
-        routes[0] = ILiquidLaneUniswapXExecutor.DiscountRoute({
-            adapter: address(adapter),
+        return ILiquidLaneUniswapXExecutor.DiscountRoute({
+            adapter: routeAdapter,
             amountIn: amountIn,
-            minAmountOut: minAmountOut,
             discountSwap: ILiquidLaneAdapter.DiscountSwap({
                 discount: ILiquidLaneAdapter.Discount({
                     tokenToRedeem: address(inputToken),
@@ -351,18 +363,18 @@ contract LiquidLaneUniswapXExecutorTest is Test {
             }),
             protocolSignature: hex"02"
         });
-        fillCall = ILiquidLaneUniswapXExecutor.FillCall({
-            routes: new ILiquidLaneUniswapXExecutor.FillRoute[](0), discountRoutes: routes
-        });
     }
 }
 
 contract MockUniswapXReactor is IUniswapXReactor {
+    using Address for address payable;
     using SafeERC20 for IERC20;
 
     address internal tokenIn;
     uint256 internal amountIn;
     UniswapXOutputToken[] internal storedOutputs;
+
+    receive() external payable {}
 
     function setOrder(UniswapXResolvedOrder memory newOrder) external {
         tokenIn = newOrder.input.token;
@@ -396,38 +408,55 @@ contract MockUniswapXReactor is IUniswapXReactor {
             hash: keccak256("order")
         });
         IUniswapXReactorCallback(msg.sender).reactorCallback(orders, callbackData);
-
         for (uint256 i; i < outputs.length; ++i) {
-            IERC20(outputs[i].token).safeTransferFrom(msg.sender, outputs[i].recipient, outputs[i].amount);
+            if (outputs[i].token == address(0)) {
+                payable(outputs[i].recipient).sendValue(outputs[i].amount);
+            } else {
+                IERC20(outputs[i].token).safeTransferFrom(msg.sender, outputs[i].recipient, outputs[i].amount);
+            }
         }
+        uint256 nativeRefund = address(this).balance;
+        if (nativeRefund > 0) payable(msg.sender).sendValue(nativeRefund);
     }
 }
 
 contract MockUniswapXAdapter is ILiquidLaneAdapter {
+    using Address for address payable;
     using SafeERC20 for IERC20;
 
-    TestToken internal immutable outputToken;
-    uint256 internal amountOut = 10 ether;
-    uint256 internal reportedAmountOut = 10 ether;
+    error AdapterFailed();
 
-    constructor(TestToken outputToken_) {
+    address internal immutable outputToken;
+    uint256 internal directOutput;
+    uint256 internal discountOutput;
+    uint256 public directCalls;
+    uint256 public discountCalls;
+    bool internal shouldRevert;
+
+    constructor(address outputToken_) {
         outputToken = outputToken_;
     }
 
-    function setAmountOut(uint256 newAmountOut) external {
-        amountOut = newAmountOut;
+    receive() external payable {}
+
+    function setDirectOutput(uint256 newDirectOutput) external {
+        directOutput = newDirectOutput;
     }
 
-    function setReportedAmountOut(uint256 newAmountOut) external {
-        reportedAmountOut = newAmountOut;
+    function setDiscountOutput(uint256 newDiscountOutput) external {
+        discountOutput = newDiscountOutput;
+    }
+
+    function setShouldRevert(bool newShouldRevert) external {
+        shouldRevert = newShouldRevert;
     }
 
     function getAmountOut(address, uint256) external view returns (uint256) {
-        return amountOut;
+        return directOutput;
     }
 
     function getMaxAssets(address) external view returns (uint256) {
-        return outputToken.balanceOf(address(this));
+        return outputToken == address(0) ? address(this).balance : IERC20(outputToken).balanceOf(address(this));
     }
 
     function minDiscount(address) external pure returns (uint256) {
@@ -435,20 +464,31 @@ contract MockUniswapXAdapter is ILiquidLaneAdapter {
     }
 
     function swap(Swap calldata swap_) external {
-        IERC20(address(outputToken)).safeTransfer(swap_.recipient, _min(swap_.amountOut, amountOut));
+        ++directCalls;
+        if (shouldRevert) revert AdapterFailed();
+        _transferOutput(swap_.recipient, directOutput);
     }
 
     function swap(SignedSwap calldata, bytes calldata) external pure {
         revert("unsupported");
     }
 
-    function swap(DiscountSwap calldata, bytes calldata, address recipient_, uint256) external returns (uint256) {
-        IERC20(address(outputToken)).safeTransfer(recipient_, amountOut);
-        return reportedAmountOut;
+    function swap(DiscountSwap calldata, bytes calldata, address recipient_, uint256)
+        external
+        returns (uint256 amountOut)
+    {
+        ++discountCalls;
+        if (shouldRevert) revert AdapterFailed();
+        amountOut = discountOutput;
+        _transferOutput(recipient_, amountOut);
     }
 
-    function _min(uint256 left, uint256 right) private pure returns (uint256) {
-        return left < right ? left : right;
+    function _transferOutput(address recipient_, uint256 amount) internal {
+        if (outputToken == address(0)) {
+            payable(recipient_).sendValue(amount);
+        } else {
+            IERC20(outputToken).safeTransfer(recipient_, amount);
+        }
     }
 }
 
@@ -457,5 +497,16 @@ contract TestToken is ERC20 {
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
+    }
+}
+
+contract ApprovalCountingToken is TestToken {
+    uint256 public approveCalls;
+
+    constructor(string memory name_, string memory symbol_) TestToken(name_, symbol_) {}
+
+    function _approve(address owner_, address spender, uint256 value, bool emitEvent) internal override {
+        if (emitEvent) ++approveCalls;
+        super._approve(owner_, spender, value, emitEvent);
     }
 }
