@@ -59,7 +59,7 @@ contract LiquidLaneIntegrationTest is Test {
         rwa.approve(address(reactor), type(uint256).max);
     }
 
-    function testLiquidLaneConstantsMatchMirrorSchema() public pure {
+    function testLiquidLaneConstantsMatchCoreSchema() public pure {
         assertEq(DISCOUNT_PRECISION, 1_000_000);
         assertEq(
             SIGNED_SWAP_TYPEHASH,

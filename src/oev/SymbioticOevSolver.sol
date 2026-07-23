@@ -67,9 +67,9 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
     address public owner;
     mapping(bytes32 auctionKey => bool used) public usedAuctionKey;
 
-    bytes32 private transient payBidAuctionKey;
-    uint256 private transient authorizedBidAmount;
-    bool private transient payBidReady;
+    bytes32 private payBidAuctionKey;
+    uint256 private authorizedBidAmount;
+    bool private payBidReady;
 
     uint256 private transient lastLegProfit;
 

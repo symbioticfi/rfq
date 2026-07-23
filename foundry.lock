@@ -1,26 +1,14 @@
 {
-  "lib/3f-request-whitelist": {
-    "tag": {
-      "name": "v1.0.0",
-      "rev": "84033e4e1583535a976d84dca8cd513e3241ce3b"
-    }
-  },
-  "lib/core-mirror": {
+  "lib/core": {
     "branch": {
       "name": "delegator-simplify",
-      "rev": "8e5c03316c8bf7420b71abb3abb4a78c9dd9b6bd"
+      "rev": "3f0e820c1b5a529724b3d4c378db60dcf7e3e2f7"
     }
   },
   "lib/forge-std": {
     "tag": {
       "name": "v1.15.0",
       "rev": "0844d7e1fc5e60d77b68e469bff60265f236c398"
-    }
-  },
-  "lib/grunt": {
-    "tag": {
-      "name": "v1.1.0",
-      "rev": "adcdd5002188ecbe05cf272347bc80350ae52b8c"
     }
   },
   "lib/openzeppelin-contracts": {
