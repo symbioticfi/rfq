@@ -57,7 +57,7 @@ contract LifiExecutorForkTest is Test {
         bytes32 orderId = IInputSettlerEscrowLike(INPUT_SETTLER).orderIdentifier(order);
 
         vm.prank(owner);
-        executor.finaliseWithCurrentTimestamp(order, _routes(order));
+        executor.finaliseWithCurrentTimestamp(order, _routes(order), new ILiquidLaneLifiExecutor.DiscountRoute[](0));
 
         assertEq(IInputSettlerEscrowLike(INPUT_SETTLER).orderStatus(orderId), 2, "claimed");
         assertEq(outputToken.balanceOf(recipient), 9 ether, "recipient output");
@@ -119,25 +119,7 @@ contract LifiExecutorForkTest is Test {
     {
         routes = new ILiquidLaneLifiExecutor.FillRoute[](1);
         routes[0] = ILiquidLaneLifiExecutor.FillRoute({
-            adapter: address(adapter),
-            amountIn: order.inputs[0][1],
-            amountOut: 10 ether,
-            discount: ILiquidLaneLifiExecutor.FillDiscount({
-                discountId: bytes32(0),
-                discountSwap: ILiquidLaneAdapter.DiscountSwap({
-                    discount: ILiquidLaneAdapter.Discount({
-                        tokenToRedeem: address(0),
-                        discount: 0,
-                        signer: address(0),
-                        protocol: address(0),
-                        nonce: 0,
-                        deadline: 0
-                    }),
-                    signerSignature: "",
-                    protocolDeadline: 0
-                }),
-                protocolSignature: ""
-            })
+            adapter: address(adapter), amountIn: order.inputs[0][1], amountOut: 10 ether
         });
     }
 

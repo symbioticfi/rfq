@@ -82,7 +82,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
         bytes32 orderId = _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
 
         assertEq(rwa.balanceOf(address(adapter)), 10 ether);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
@@ -107,7 +109,7 @@ contract LiquidLaneLifiExecutorTest is Test {
         routes[0] = _directRoute(address(adapter), 4 ether, 4 ether);
         routes[1] = _directRoute(address(secondAdapter), 6 ether, 6 ether);
 
-        executor.finaliseWithCurrentTimestamp(order, routes);
+        executor.finaliseWithCurrentTimestamp(order, routes, _noDiscountRoutes());
 
         assertEq(rwa.balanceOf(address(adapter)), 4 ether);
         assertEq(rwa.balanceOf(address(secondAdapter)), 6 ether);
@@ -115,19 +117,35 @@ contract LiquidLaneLifiExecutorTest is Test {
         assertEq(outputToken.balanceOf(address(executor)), 1 ether);
     }
 
-    function testFinaliseWithCurrentTimestampExecutesPrivateDiscountRoute() public {
+    function testFinaliseWithCurrentTimestampExecutesDiscountRoute() public {
         vm.warp(1000);
         IInputSettler.StandardOrder memory order = _order(10 ether, 8 ether);
-        bytes32 orderId = _openOrder(order);
+        _openOrder(order);
 
-        ILiquidLaneLifiExecutor.FillRoute[] memory routes = new ILiquidLaneLifiExecutor.FillRoute[](1);
-        routes[0] = _discountRoute(address(adapter), 10 ether, keccak256("discount"), 100_000);
+        ILiquidLaneLifiExecutor.DiscountRoute[] memory discountRoutes = new ILiquidLaneLifiExecutor.DiscountRoute[](1);
+        discountRoutes[0] = _discountRoute(address(adapter), 10 ether, 100_000);
 
-        executor.finaliseWithCurrentTimestamp(order, routes);
+        executor.finaliseWithCurrentTimestamp(order, _noRoutes(), discountRoutes);
 
         assertEq(rwa.balanceOf(address(adapter)), 10 ether);
         assertEq(outputToken.balanceOf(recipient), 8 ether);
         assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+    }
+
+    function testFinaliseWithCurrentTimestampExecutesDirectAndDiscountRoutes() public {
+        vm.warp(1000);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 8 ether);
+        _openOrder(order);
+
+        ILiquidLaneLifiExecutor.DiscountRoute[] memory discountRoutes = new ILiquidLaneLifiExecutor.DiscountRoute[](1);
+        discountRoutes[0] = _discountRoute(address(adapter), 6 ether, 100_000);
+
+        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 4 ether, 4 ether), discountRoutes);
+
+        assertEq(rwa.balanceOf(address(adapter)), 10 ether);
+        // 4 ether direct output plus 5.4 ether discounted output; 8 ether fill leaves 1.4 ether surplus.
+        assertEq(outputToken.balanceOf(recipient), 8 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1.4 ether);
     }
 
     function testFinaliseWithCurrentTimestampSupportsSameInputAndOutputToken() public {
@@ -137,7 +155,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         IInputSettler.StandardOrder memory order = _order(10 ether, 9.5 ether, address(rwa));
         _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(sameTokenAdapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(sameTokenAdapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
 
         assertEq(rwa.balanceOf(recipient), 9.5 ether);
         // Pre-existing 3 ether plus 0.5 ether fill surplus stay with the executor.
@@ -151,7 +171,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         order.outputs[0].context = _dutchContext(900, 1100, 0.01 ether);
         _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10.5 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10.5 ether), _noDiscountRoutes()
+        );
 
         assertEq(outputToken.balanceOf(recipient), 10 ether);
         assertEq(outputSettler.lastOutputAmount(), 10 ether);
@@ -164,7 +186,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         order.outputs[0].context = _exclusiveDutchContext(_id(makeAddr("otherSolver")), 900, 1100, 0.01 ether);
         _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10.5 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10.5 ether), _noDiscountRoutes()
+        );
 
         assertEq(outputToken.balanceOf(recipient), 10 ether);
         assertEq(outputSettler.lastOutputAmount(), 10 ether);
@@ -176,7 +200,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         order.outputs[0].context = _exclusiveContext(_id(makeAddr("otherSolver")), 1000);
         _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
 
         assertEq(outputToken.balanceOf(recipient), 9 ether);
     }
@@ -186,7 +212,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         IInputSettler.StandardOrder memory order = _order(10 ether, 8.5 ether);
         _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 9 ether, 9 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 9 ether, 9 ether), _noDiscountRoutes()
+        );
 
         assertEq(rwa.balanceOf(address(adapter)), 9 ether);
         assertEq(rwa.balanceOf(address(inputSettler)), 1 ether);
@@ -199,7 +227,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
         _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
 
         assertEq(rwa.balanceOf(address(executor)), 5 ether);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
@@ -210,7 +240,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         order.outputs[0].recipient = _id(address(executor));
         _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
 
         assertEq(outputToken.balanceOf(address(executor)), 10 ether);
     }
@@ -222,7 +254,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         order.outputs[0].callbackData = hex"01";
         _openOrder(order);
 
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
 
         assertEq(outputToken.balanceOf(address(outputRecipient)), 8 ether);
         assertEq(outputToken.balanceOf(address(executor)), 2 ether);
@@ -237,7 +271,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         _openOrder(order);
 
         vm.expectRevert(bytes("exclusive"));
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
     }
 
     function testFinaliseWithCurrentTimestampBubblesInsufficientOutputForResolvedDutchAmount() public {
@@ -251,7 +287,9 @@ contract LiquidLaneLifiExecutorTest is Test {
                 IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 9.5 ether, 10 ether
             )
         );
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 9.5 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 9.5 ether), _noDiscountRoutes()
+        );
     }
 
     function testFinaliseWithCurrentTimestampBubblesAlreadyClaimedOrder() public {
@@ -259,7 +297,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         inputSettler.setOrderStatus(_orderId(order), ORDER_STATUS_CLAIMED);
 
         vm.expectRevert(MockInputSettler.InvalidOrderStatus.selector);
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
     }
 
     function testFinaliseWithCurrentTimestampBubblesExpiredFillDeadline() public {
@@ -268,7 +308,9 @@ contract LiquidLaneLifiExecutorTest is Test {
         _openOrder(order);
 
         vm.expectRevert(bytes("deadline"));
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
     }
 
     /* CALLER AUTHORIZATION */
@@ -279,7 +321,9 @@ contract LiquidLaneLifiExecutorTest is Test {
 
         vm.expectRevert(ILiquidLaneLifiExecutor.NotCaller.selector);
         vm.prank(caller);
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
     }
 
     function testSetCallersAllowsNonOwnerToFinaliseAndRevokesOldCaller() public {
@@ -293,12 +337,16 @@ contract LiquidLaneLifiExecutorTest is Test {
         _openOrder(order);
 
         vm.prank(caller);
-        executor.finaliseWithCurrentTimestamp(order, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
         assertEq(outputToken.balanceOf(recipient), 9 ether);
 
         IInputSettler.StandardOrder memory secondOrder = _order(10 ether, 8 ether);
         vm.expectRevert(ILiquidLaneLifiExecutor.NotCaller.selector);
-        executor.finaliseWithCurrentTimestamp(secondOrder, _directRoutes(address(adapter), 10 ether, 10 ether));
+        executor.finaliseWithCurrentTimestamp(
+            secondOrder, _directRoutes(address(adapter), 10 ether, 10 ether), _noDiscountRoutes()
+        );
     }
 
     function testSetCallersRejectsNonOwner() public {
@@ -512,64 +560,48 @@ contract LiquidLaneLifiExecutorTest is Test {
         pure
         returns (ILiquidLaneLifiExecutor.FillRoute memory)
     {
-        return ILiquidLaneLifiExecutor.FillRoute({
-            adapter: fillAdapter, amountIn: amountIn, amountOut: amountOut, discount: _emptyDiscount()
-        });
+        return ILiquidLaneLifiExecutor.FillRoute({adapter: fillAdapter, amountIn: amountIn, amountOut: amountOut});
     }
 
-    function _discountRoute(address fillAdapter, uint256 amountIn, bytes32 discountId, uint256 discount)
+    function _discountRoute(address fillAdapter, uint256 amountIn, uint256 discount)
         internal
         view
-        returns (ILiquidLaneLifiExecutor.FillRoute memory)
+        returns (ILiquidLaneLifiExecutor.DiscountRoute memory)
     {
-        return ILiquidLaneLifiExecutor.FillRoute({
+        return ILiquidLaneLifiExecutor.DiscountRoute({
             adapter: fillAdapter,
             amountIn: amountIn,
-            amountOut: 0,
-            discount: ILiquidLaneLifiExecutor.FillDiscount({
-                discountId: discountId,
-                discountSwap: ILiquidLaneAdapter.DiscountSwap({
-                    discount: ILiquidLaneAdapter.Discount({
-                        tokenToRedeem: address(rwa),
-                        discount: discount,
-                        signer: DISCOUNT_SIGNER,
-                        protocol: address(0xBEEF),
-                        nonce: 1,
-                        deadline: uint48(block.timestamp + 100)
-                    }),
-                    signerSignature: hex"1234",
-                    protocolDeadline: uint48(block.timestamp + 100)
+            discountSwap: ILiquidLaneAdapter.DiscountSwap({
+                discount: ILiquidLaneAdapter.Discount({
+                    tokenToRedeem: address(rwa),
+                    discount: discount,
+                    signer: DISCOUNT_SIGNER,
+                    protocol: address(0xBEEF),
+                    nonce: 1,
+                    deadline: uint48(block.timestamp + 100)
                 }),
-                protocolSignature: hex"5678"
-            })
+                signerSignature: hex"1234",
+                protocolDeadline: uint48(block.timestamp + 100)
+            }),
+            protocolSignature: hex"5678"
         });
     }
 
-    function _emptyDiscount() internal pure returns (ILiquidLaneLifiExecutor.FillDiscount memory) {
-        return ILiquidLaneLifiExecutor.FillDiscount({
-            discountId: bytes32(0),
-            discountSwap: ILiquidLaneAdapter.DiscountSwap({
-                discount: ILiquidLaneAdapter.Discount({
-                    tokenToRedeem: address(0),
-                    discount: 0,
-                    signer: address(0),
-                    protocol: address(0),
-                    nonce: 0,
-                    deadline: 0
-                }),
-                signerSignature: "",
-                protocolDeadline: 0
-            }),
-            protocolSignature: ""
-        });
-    }
+    function _noRoutes() internal pure returns (ILiquidLaneLifiExecutor.FillRoute[] memory routes) {}
+
+    function _noDiscountRoutes()
+        internal
+        pure
+        returns (ILiquidLaneLifiExecutor.DiscountRoute[] memory discountRoutes)
+    {}
 
     function _unsolicitedFillCall() internal view returns (ILiquidLaneLifiExecutor.FillCall memory) {
         return ILiquidLaneLifiExecutor.FillCall({
             orderId: ORDER_ID,
             output: _output(9 ether),
             fillDeadline: uint32(block.timestamp + 1 hours),
-            routes: _directRoutes(address(adapter), 10 ether, 10 ether)
+            routes: _directRoutes(address(adapter), 10 ether, 10 ether),
+            discountRoutes: _noDiscountRoutes()
         });
     }
 
