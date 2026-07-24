@@ -68,7 +68,8 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
         uint256 outputsLength = resolvedOrders[0].outputs.length;
         for (uint256 i; i < outputsLength; ++i) {
             address token = resolvedOrders[0].outputs[i].token;
-            if (IERC20(token).allowance(address(this), REACTOR) < type(uint256).max) {
+            // Native output (address(0)) is forwarded below; only ERC-20 outputs need a Reactor allowance.
+            if (token != address(0) && IERC20(token).allowance(address(this), REACTOR) < type(uint256).max) {
                 IERC20(token).forceApprove(REACTOR, type(uint256).max);
             }
         }
