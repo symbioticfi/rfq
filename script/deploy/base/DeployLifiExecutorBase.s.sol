@@ -5,20 +5,22 @@ import {Script, console2} from "forge-std/Script.sol";
 
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
-import {Executor} from "../../../src/Executor.sol";
+import {LiquidLaneLifiExecutor} from "../../../src/lifi/LiquidLaneLifiExecutor.sol";
 
-contract DeployExecutorBaseScript is Script {
+contract DeployLifiExecutorBaseScript is Script {
     struct DeployParams {
-        address reactor;
+        address inputSettler;
+        address outputSettler;
         address admin;
         address proxyAdminOwner;
         address caller;
     }
 
     struct DeploymentData {
-        Executor executor;
+        LiquidLaneLifiExecutor executor;
         address implementation;
-        address reactor;
+        address inputSettler;
+        address outputSettler;
         address admin;
         address proxyAdminOwner;
         address caller;
@@ -31,17 +33,18 @@ contract DeployExecutorBaseScript is Script {
         callers[0] = params.caller;
 
         _startBroadcast();
-        Executor implementation = new Executor(params.reactor);
+        LiquidLaneLifiExecutor implementation = new LiquidLaneLifiExecutor(params.inputSettler, params.outputSettler);
         TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
             address(implementation),
             params.proxyAdminOwner,
-            abi.encodeCall(Executor.initialize, (params.admin, callers))
+            abi.encodeCall(LiquidLaneLifiExecutor.initialize, (params.admin, callers))
         );
         _stopBroadcast();
 
-        data.executor = Executor(payable(address(proxy)));
+        data.executor = LiquidLaneLifiExecutor(address(proxy));
         data.implementation = address(implementation);
-        data.reactor = params.reactor;
+        data.inputSettler = params.inputSettler;
+        data.outputSettler = params.outputSettler;
         data.admin = params.admin;
         data.proxyAdminOwner = params.proxyAdminOwner;
         data.caller = params.caller;
@@ -64,7 +67,8 @@ contract DeployExecutorBaseScript is Script {
     }
 
     function _validateParams(DeployParams memory params) internal pure {
-        require(params.reactor != address(0), "invalid reactor");
+        require(params.inputSettler != address(0), "invalid input settler");
+        require(params.outputSettler != address(0), "invalid output settler");
         require(params.admin != address(0), "invalid admin");
         require(params.proxyAdminOwner != address(0), "invalid proxy admin owner");
         require(params.caller != address(0), "invalid caller");
@@ -72,14 +76,17 @@ contract DeployExecutorBaseScript is Script {
 
     function _validateDeployment(DeploymentData memory data) internal view {
         assert(data.executor.owner() == data.admin);
-        assert(data.executor.callers(0) == data.caller);
+        assert(data.executor.INPUT_SETTLER() == data.inputSettler);
+        assert(data.executor.OUTPUT_SETTLER() == data.outputSettler);
+        assert(data.executor.isCaller(data.caller));
     }
 
     function _logDeployment(DeploymentData memory data) internal view {
-        console2.log("Deployed RFQ Executor");
+        console2.log("Deployed LI.FI Executor");
         console2.log("  executor:        ", address(data.executor));
         console2.log("  implementation:  ", data.implementation);
-        console2.log("  reactor:         ", data.reactor);
+        console2.log("  inputSettler:    ", data.inputSettler);
+        console2.log("  outputSettler:   ", data.outputSettler);
         console2.log("  admin:           ", data.admin);
         console2.log("  proxyAdminOwner: ", data.proxyAdminOwner);
         console2.log("  caller:          ", data.caller);

@@ -46,6 +46,13 @@ interface IExecutor {
     /* FUNCTIONS */
 
     /**
+     * @notice Initializes the proxy with its owner and allowed caller list.
+     * @param owner Owner authorized to manage the caller list.
+     * @param initCallers Initial addresses allowed to call the fill entrypoints.
+     */
+    function initialize(address owner, address[] calldata initCallers) external;
+
+    /**
      * @notice Returns an allowed caller by index.
      * @param index Caller index.
      * @return caller Caller address.

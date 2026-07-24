@@ -8,12 +8,15 @@ import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 /// @title Executor
 /// @notice Caller-gated executor that forwards fills into Reactor and handles execution callbacks.
-contract Executor is Ownable, IExecutor {
+/// @dev Deployed behind a transparent proxy; the Reactor address is immutable in the implementation
+/// while ownership and the caller list live in proxy storage set by {initialize}.
+contract Executor is Initializable, OwnableUpgradeable, IExecutor {
     using Address for address payable;
     using SafeERC20 for IERC20;
     using Address for address;
@@ -30,8 +33,14 @@ contract Executor is Ownable, IExecutor {
 
     /* CONSTRUCTOR */
 
-    constructor(address reactor, address owner, address[] memory initCallers) Ownable(owner) {
+    constructor(address reactor) {
         REACTOR = reactor;
+        _disableInitializers();
+    }
+
+    /// @inheritdoc IExecutor
+    function initialize(address owner, address[] calldata initCallers) external initializer {
+        __Ownable_init(owner);
 
         callers = initCallers;
     }

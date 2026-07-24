@@ -9,6 +9,7 @@ import {ILiquidLaneAdapter} from "../src/interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -47,7 +48,14 @@ contract ReactorMainnetForkTest is Test {
         adapterFactory = new ForkAdapterFactory();
         adapterFactory.setEntity(address(adapter), true);
         reactor = new Reactor(address(adapterFactory));
-        executor = new Executor(address(reactor), address(this), _callers(filler));
+        Executor executorImpl = new Executor(address(reactor));
+        executor = Executor(
+            payable(new TransparentUpgradeableProxy(
+                    address(executorImpl),
+                    makeAddr("proxyAdminOwner"),
+                    abi.encodeCall(Executor.initialize, (address(this), _callers(filler)))
+                ))
+        );
 
         adapter.setAccount(vault, DAI, vaultAccount);
 

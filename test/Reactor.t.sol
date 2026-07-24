@@ -11,6 +11,8 @@ import {IReactor, NATIVE, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} fro
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -30,6 +32,7 @@ contract ReactorTest is Test {
     address internal vault1 = makeAddr("vault1");
     address internal vault0Account = makeAddr("vault0Account");
     address internal vault1Account = makeAddr("vault1Account");
+    address internal proxyAdminOwner = makeAddr("proxyAdminOwner");
 
     MockAdapter internal adapter;
     MockAdapter internal secondaryAdapter;
@@ -48,7 +51,7 @@ contract ReactorTest is Test {
         adapterFactory.setEntity(address(secondaryAdapter), true);
         callTarget = new MockCallTarget();
         reactor = new Reactor(address(adapterFactory));
-        executor = new Executor(address(reactor), address(this), _callers(filler));
+        executor = _deployExecutor(address(reactor), address(this), _callers(filler));
 
         rwa = new MockERC20("RWA", "RWA");
         outputToken = new MockERC20("USD", "USD");
@@ -246,7 +249,7 @@ contract ReactorTest is Test {
 
     function testExecutorRequiresCaller() public {
         Reactor customReactor = new Reactor(address(adapterFactory));
-        Executor lockedExecutor = new Executor(address(customReactor), address(this), new address[](0));
+        Executor lockedExecutor = _deployExecutor(address(customReactor), address(this), new address[](0));
 
         outputToken.mint(address(lockedExecutor), 5 ether);
 
@@ -276,8 +279,25 @@ contract ReactorTest is Test {
         assertEq(adapter.signedSwapCount(), 0);
     }
 
+    function testExecutorInitializeSetsOwnerAndCallers() public view {
+        assertEq(executor.owner(), address(this));
+        assertEq(executor.callers(0), filler);
+    }
+
+    function testExecutorInitializeCannotBeCalledTwice() public {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        executor.initialize(makeAddr("intruder"), _callers(filler));
+    }
+
+    function testExecutorImplementationInitializerIsDisabled() public {
+        Executor impl = new Executor(address(reactor));
+
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        impl.initialize(makeAddr("intruder"), _callers(filler));
+    }
+
     function testFillRevertsIfExecutorDoesNotMatchOrderFiller() public {
-        Executor otherExecutor = new Executor(address(reactor), address(this), _callers(filler));
+        Executor otherExecutor = _deployExecutor(address(reactor), address(this), _callers(filler));
 
         IReactor.Output[] memory outputs = new IReactor.Output[](1);
         outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
@@ -887,6 +907,17 @@ contract ReactorTest is Test {
         callers_[0] = caller;
     }
 
+    function _deployExecutor(address reactor_, address owner_, address[] memory initCallers)
+        internal
+        returns (Executor)
+    {
+        Executor impl = new Executor(reactor_);
+        TransparentUpgradeableProxy proxy = new TransparentUpgradeableProxy(
+            address(impl), proxyAdminOwner, abi.encodeCall(Executor.initialize, (owner_, initCallers))
+        );
+        return Executor(payable(address(proxy)));
+    }
+
     function _order(IReactor.Output[] memory outputs) internal view returns (IReactor.Order memory) {
         return _order(outputs, 10 ether, address(executor));
     }
@@ -1227,6 +1258,8 @@ contract ReentrantNativeRecipient is IExecutor {
         IReactor.DiscountSwapInput[] calldata,
         bytes calldata
     ) external {}
+
+    function initialize(address, address[] calldata) external {}
 
     function setCallers(address[] calldata) external {}
 
