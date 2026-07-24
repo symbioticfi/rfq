@@ -27,6 +27,7 @@ abstract contract DeployUniswapXExecutorBaseScript is Script {
 
     function runBase(DeployParams memory params) public virtual returns (DeploymentData memory data) {
         _validateParams(params);
+
         address[] memory callers = new address[](1);
         callers[0] = params.caller;
 
@@ -46,24 +47,8 @@ abstract contract DeployUniswapXExecutorBaseScript is Script {
         data.proxyAdminOwner = params.proxyAdminOwner;
         data.caller = params.caller;
 
-        assert(address(data.executor) != data.implementation);
-        assert(data.executor.owner() == data.admin);
-        assert(data.executor.callers(0) == data.caller);
-
-        console2.log("Deployed UniswapX Executor");
-        console2.log("  executor:        ", address(data.executor));
-        console2.log("  implementation:  ", data.implementation);
-        console2.log("  reactor:         ", data.reactor);
-        console2.log("  admin:           ", data.admin);
-        console2.log("  proxyAdminOwner: ", data.proxyAdminOwner);
-        console2.log("  caller:          ", data.caller);
-    }
-
-    function _validateParams(DeployParams memory params) internal pure {
-        require(params.reactor != address(0), "invalid reactor");
-        require(params.admin != address(0), "invalid admin");
-        require(params.proxyAdminOwner != address(0), "invalid proxy admin owner");
-        require(params.caller != address(0), "invalid caller");
+        _validateDeployment(data);
+        _logDeployment(data);
     }
 
     function _startBroadcast() internal virtual {
@@ -74,8 +59,26 @@ abstract contract DeployUniswapXExecutorBaseScript is Script {
         vm.stopBroadcast();
     }
 
-    function _scriptOwner() internal view virtual returns (address owner) {
-        (,, address origin) = vm.readCallers();
-        owner = origin == address(0) ? msg.sender : origin;
+    function _validateParams(DeployParams memory params) internal pure {
+        require(params.reactor != address(0), "invalid reactor");
+        require(params.admin != address(0), "invalid admin");
+        require(params.proxyAdminOwner != address(0), "invalid proxy admin owner");
+        require(params.caller != address(0), "invalid caller");
+    }
+
+    function _validateDeployment(DeploymentData memory data) internal view {
+        assert(address(data.executor) != data.implementation);
+        assert(data.executor.owner() == data.admin);
+        assert(data.executor.callers(0) == data.caller);
+    }
+
+    function _logDeployment(DeploymentData memory data) internal view {
+        console2.log("Deployed UniswapX Executor");
+        console2.log("  executor:        ", address(data.executor));
+        console2.log("  implementation:  ", data.implementation);
+        console2.log("  reactor:         ", data.reactor);
+        console2.log("  admin:           ", data.admin);
+        console2.log("  proxyAdminOwner: ", data.proxyAdminOwner);
+        console2.log("  caller:          ", data.caller);
     }
 }
