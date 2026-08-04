@@ -8,6 +8,8 @@ import {Router} from "../src/Router.sol";
 import {IRouter} from "../src/interfaces/IRouter.sol";
 import {DeployRouterScript} from "../script/deploy/DeployRouter.s.sol";
 
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+
 error MockAdapterFailure();
 
 contract MockRegistry {
@@ -142,15 +144,17 @@ contract RouterTest is Test {
         inputToken.approve(address(router), type(uint256).max);
     }
 
-    function testConstructorRejectsZeroFactory() public {
-        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidFactory.selector, address(0)));
-        new Router(address(0));
+    function testConstructorStoresZeroFactory() public {
+        Router zeroFactoryRouter = new Router(address(0));
+
+        assertEq(zeroFactoryRouter.LIQUID_LANE_ADAPTER_FACTORY(), address(0));
     }
 
-    function testConstructorRejectsNonContractFactory() public {
+    function testConstructorStoresNonContractFactory() public {
         address notContract = makeAddr("notContract");
-        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidFactory.selector, notContract));
-        new Router(notContract);
+        Router nonContractFactoryRouter = new Router(notContract);
+
+        assertEq(nonContractFactoryRouter.LIQUID_LANE_ADAPTER_FACTORY(), notContract);
     }
 
     function testStoresRegistryFactory() public view {
@@ -290,13 +294,21 @@ contract RouterTest is Test {
         assertEq(inputToken.balanceOf(address(adapter0)), 0);
     }
 
-    function testWrapsAdapterRevertData() public {
+    function testBubblesAdapterRevertData() public {
         adapter0.configure(0, false, false, true);
-        bytes memory reason = abi.encodeWithSelector(MockAdapterFailure.selector);
-        vm.expectRevert(abi.encodeWithSelector(IRouter.AdapterCallFailed.selector, 0, address(adapter0), reason));
+        vm.expectRevert(MockAdapterFailure.selector);
 
         vm.prank(swapper);
         router.execute(address(inputToken), _oneCall(address(adapter0), 1 ether, hex"1234"), new IRouter.Output[](0));
+    }
+
+    function testRegisteredNonContractAdapterReverts() public {
+        address nonContractAdapter = makeAddr("nonContractAdapter");
+        registry.setEntity(nonContractAdapter, true);
+        vm.expectRevert(abi.encodeWithSelector(Address.AddressEmptyCode.selector, nonContractAdapter));
+
+        vm.prank(swapper);
+        router.execute(address(inputToken), _oneCall(nonContractAdapter, 1 ether, hex"1234"), new IRouter.Output[](0));
     }
 
     function testLaterAdapterFailureRollsBackWholeBatch() public {
@@ -337,9 +349,7 @@ contract RouterTest is Test {
     function testAdapterReentrancyRevertsWholeBatch() public {
         adapter0.configure(10 ether, true, true, false);
         bytes memory reentrancyReason = abi.encodeWithSignature("ReentrancyGuardReentrantCall()");
-        vm.expectRevert(
-            abi.encodeWithSelector(IRouter.AdapterCallFailed.selector, 0, address(adapter0), reentrancyReason)
-        );
+        vm.expectRevert(reentrancyReason);
 
         vm.prank(swapper);
         router.execute(
@@ -351,6 +361,20 @@ contract RouterTest is Test {
         assertEq(inputToken.balanceOf(swapper), 1000 ether);
         assertEq(adapter0.callCount(), 0);
         assertEq(outputToken.balanceOf(recipient), 0);
+    }
+
+    function testDeadlineExecutionRemainsReentrancyProtected() public {
+        adapter0.configure(10 ether, true, true, false);
+        bytes memory reentrancyReason = abi.encodeWithSignature("ReentrancyGuardReentrantCall()");
+        vm.expectRevert(reentrancyReason);
+
+        vm.prank(swapper);
+        router.execute(
+            address(inputToken),
+            _oneCall(address(adapter0), 10 ether, hex"01"),
+            _oneOutput(address(outputToken), 10 ether, recipient),
+            block.timestamp
+        );
     }
 
     function testFuzzAggregatesRegisteredLegs(uint96 rawAmount0, uint96 rawAmount1) public {

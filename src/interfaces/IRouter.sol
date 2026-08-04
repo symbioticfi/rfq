@@ -21,10 +21,8 @@ interface IRouter {
         uint256 amount;
     }
 
-    error AdapterCallFailed(uint256 index, address adapter, bytes reason);
     error Expired(uint256 deadline);
     error InvalidAdapter(uint256 index, address adapter);
-    error InvalidFactory(address factory);
 
     function LIQUID_LANE_ADAPTER_FACTORY() external view returns (address);
     function execute(address tokenIn, SwapCall[] calldata calls, Output[] calldata outputs) external;
