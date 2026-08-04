@@ -46,7 +46,7 @@ contract Router is IRouter, ReentrancyGuard {
     /// @inheritdoc IRouter
     function execute(address tokenIn, SwapCall[] calldata calls, Output[] calldata outputs, uint256 deadline) external {
         if (block.timestamp > deadline) {
-            revert Expired(deadline);
+            revert Expired();
         }
         execute(tokenIn, calls, outputs);
     }

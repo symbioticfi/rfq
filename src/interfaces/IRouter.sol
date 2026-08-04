@@ -21,7 +21,7 @@ interface IRouter {
         uint256 amount;
     }
 
-    error Expired(uint256 deadline);
+    error Expired();
     error InvalidAdapter();
 
     function LIQUID_LANE_ADAPTER_FACTORY() external view returns (address);

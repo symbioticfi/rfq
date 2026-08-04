@@ -198,7 +198,7 @@ contract RouterTest is Test {
 
     function testExpiredDeadlineRevertsBeforeAnyOtherInteraction() public {
         vm.warp(101);
-        vm.expectRevert(abi.encodeWithSelector(IRouter.Expired.selector, 100));
+        vm.expectRevert(IRouter.Expired.selector);
         router.execute(address(0), new IRouter.SwapCall[](0), new IRouter.Output[](0), 100);
     }
 
