@@ -4,15 +4,18 @@
 
 **Goal:** Add an ownerless `Router` that atomically funds registered LiquidLane adapters from the caller, executes signed or discounted swap calldata, and distributes transaction-local ERC-20 output deltas.
 
-**Architecture:** `IRouter` fixes the typed batch ABI, allowed selectors, errors, and events. `Router` validates the entire batch, snapshots unique output-token balances, transfers each leg directly from `msg.sender` to its registered adapter, calls the adapter, verifies exact input consumption, enforces aggregate outputs, pays recipients, and returns surplus while preserving pre-existing balances.
+**Architecture:** `IRouter` fixes the typed batch ABI, per-leg EIP-712 authorization, allowed selectors, errors, and events. `Router` validates the entire batch and every current adapter signer before funding, snapshots unique output-token balances, transfers each leg directly from `msg.sender` to its registered adapter, calls the adapter, verifies exact input consumption, enforces aggregate outputs, pays recipients, and returns surplus while preserving pre-existing balances.
 
-**Tech Stack:** Solidity 0.8.28, Foundry, OpenZeppelin `SafeERC20` and `ReentrancyGuardTransient`, forge-std.
+**Tech Stack:** Solidity 0.8.28, Foundry, OpenZeppelin `SafeERC20`, `EIP712`, `SignatureChecker`, and `ReentrancyGuard`, forge-std.
 
 ## Global Constraints
 
 - Contract name is exactly `Router` and it is deployed directly, without proxy, owner, roles, pause, rescue, or upgrade state.
 - Input authorization is ordinary ERC-20 allowance to Router; do not add Permit2 or EIP-2612.
-- ABI field order is `SwapCall(adapter, amountIn, data)` and `Output(token, recipient, amount)`.
+- ABI field order is `SwapCall(adapter, amountIn, data, authSigner, authDeadline, authSignature)` and `Output(token, recipient, amount)`.
+- Every leg uses EIP-712 domain `Router` version `1` and the exact `SwapAuthorization(address swapper,address authSigner,address tokenIn,address adapter,uint256 amountIn,bytes32 dataHash,uint256 executionDeadline,uint256 authorizationDeadline)` primary type.
+- Require a nonzero, unexpired `authDeadline`, current adapter owner/market-maker/filler authority, and a valid OpenZeppelin `SignatureChecker` result before funding any leg.
+- Prevalidate the total input sum with checked arithmetic before adapter execution. Replay protection remains in the nonces consumed by the two allowed adapter selectors; do not add Router replay storage.
 - Expose both nonpayable overloads: `execute(tokenIn,calls,outputs)` and `execute(tokenIn,calls,outputs,deadline)`.
 - Allow only selector `0x9a4568b6` (signed swap) and `0x8fa5c671` (discount swap).
 - Validate every adapter through immutable `IRegistry(factory).isEntity(adapter)`.
@@ -22,6 +25,8 @@
 - Settle only transaction-local output deltas; never sweep or spend a pre-existing Router balance.
 - Every failure reverts the complete batch.
 - Target branch is `origin/stage`; preserve existing Reactor/Executor behavior.
+
+The authorization constraints above are the approved security amendment and supersede older task snippets below wherever they show the original three-field `SwapCall` or transient reentrancy guard.
 
 ---
 
@@ -89,7 +94,14 @@ Create `IRegistry.sol` with only the read method. Create `IRouter.sol` with:
 
 ```solidity
 interface IRouter {
-    struct SwapCall { address adapter; uint256 amountIn; bytes data; }
+    struct SwapCall {
+        address adapter;
+        uint256 amountIn;
+        bytes data;
+        address authSigner;
+        uint256 authDeadline;
+        bytes authSignature;
+    }
     struct Output { address token; address recipient; uint256 amount; }
 
     error AdapterCallFailed(uint256 index, address adapter, bytes reason);
@@ -122,7 +134,7 @@ interface IRouter {
 
 - [ ] **Step 4: Implement constructor, overload routing, and full prevalidation**
 
-Create `Router.sol` inheriting `IRouter, ReentrancyGuardTransient`. Constructor-reject a zero/non-contract factory. Route both overloads into `_execute`; the deadline overload checks `block.timestamp > deadline`. In `_validate`, require contract `tokenIn`, nonempty arrays, nonzero output/call amounts, output token code, `output.token != tokenIn`, nonzero recipient not Router, registered adapter, at least four calldata bytes, and one allowed selector:
+Create `Router.sol` inheriting `IRouter, ReentrancyGuard`. Constructor-reject a zero/non-contract factory. Route both overloads into `_execute`; the deadline overload checks `block.timestamp > deadline`. In `_validate`, require contract `tokenIn`, nonempty arrays, nonzero output/call amounts, output token code, `output.token != tokenIn`, nonzero recipient not Router, registered adapter, at least four calldata bytes, and one allowed selector:
 
 ```solidity
 bytes4 internal constant SIGNED_SWAP_SELECTOR = 0x9a4568b6;

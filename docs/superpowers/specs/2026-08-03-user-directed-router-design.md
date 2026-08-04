@@ -1,13 +1,13 @@
 # User-Directed Router Design
 
 **Date:** 2026-08-03
-**Status:** Approved design; implementation not started
+**Status:** Implemented with the signer-authorization security amendment
 
 ## Summary
 
-Add a standalone, non-upgradeable Solidity contract named `Router`. A swapper calls the Router directly after granting it an ordinary ERC-20 allowance. In one atomic transaction, the Router transfers each input leg directly from the swapper to a factory-registered LiquidLane adapter, invokes an authorized adapter swap selector with opaque calldata, verifies the output tokens received during this transaction, pays exact declared amounts to the declared recipients, and returns each declared token's surplus to the swapper.
+Add a standalone, non-upgradeable Solidity contract named `Router`. A swapper calls the Router directly after granting it an ordinary ERC-20 allowance. In one atomic transaction, the Router first verifies a Router-specific EIP-712 authorization from a current adapter owner, market maker, or filler for every leg; transfers each input leg directly from the swapper to a factory-registered LiquidLane adapter; invokes an authorized adapter swap selector with opaque calldata; verifies the output tokens received during this transaction; pays exact declared amounts to the declared recipients; and returns each declared token's surplus to the swapper.
 
-The Router is not a Reactor executor, does not validate RFQ orders, does not use Permit2, and does not retain user funds or approvals. Its security boundary is deliberately narrow: registered adapters, two permitted swap selectors, standard ERC-20 behavior, transaction-local balance deltas, and all-or-nothing execution.
+The Router is not a Reactor executor, does not validate RFQ orders, does not use Permit2, and does not retain user funds or approvals. Its security boundary is deliberately narrow: registered adapters, current adapter-authorized signers, per-leg EIP-712 authorization, two permitted swap selectors, standard ERC-20 behavior, transaction-local balance deltas, and all-or-nothing execution.
 
 ## Branch and ABI Compatibility
 
@@ -68,6 +68,9 @@ struct SwapCall {
     address adapter;
     uint256 amountIn;
     bytes data;
+    address authSigner;
+    uint256 authDeadline;
+    bytes authSignature;
 }
 
 struct Output {
@@ -84,8 +87,11 @@ struct Output {
 | `adapter` | `address` | Factory-registered LiquidLane adapter that receives this leg's input and is called. |
 | `amountIn` | `uint256` | Exact amount of the common `tokenIn` transferred directly from `msg.sender` to `adapter` for this leg. Must be nonzero. |
 | `data` | `bytes` | Complete adapter calldata, including one permitted selector and all encoded quote data and signatures. |
+| `authSigner` | `address` | Current adapter owner, market maker, or authorized filler that signs the Router authorization. |
+| `authDeadline` | `uint256` | Nonzero, unexpired Router-authorization deadline. |
+| `authSignature` | `bytes` | EIP-712 signature over the payer, signer, input token, complete leg, execution deadline, and authorization deadline. |
 
-The Router treats all calldata after the first four selector bytes as opaque. It forwards the bytes unchanged and ignores successful return data.
+The Router treats all calldata after the first four selector bytes as opaque. It forwards the bytes unchanged and ignores successful return data. `authSignature` is verified against EIP-712 domain `Router`, version `1`, the current chain ID, and this Router address. The exact primary type is `SwapAuthorization(address swapper,address authSigner,address tokenIn,address adapter,uint256 amountIn,bytes32 dataHash,uint256 executionDeadline,uint256 authorizationDeadline)`, where `dataHash = keccak256(data)`. `executionDeadline` is zero for the no-deadline overload and the exact top-level deadline otherwise.
 
 ### `Output`
 
@@ -101,7 +107,7 @@ At least one `SwapCall` and one `Output` are required. A batch with no economic 
 
 ## Adapter Trust and Call Validation
 
-For every `SwapCall`, the Router performs all validation before making the adapter call:
+For every `SwapCall`, the Router performs all validation and verifies every leg authorization before funding any leg or making an executable adapter call:
 
 1. `adapter` is nonzero and `IRegistry(LIQUID_LANE_ADAPTER_FACTORY).isEntity(adapter)` returns true.
 2. `amountIn` is nonzero.
@@ -109,7 +115,10 @@ For every `SwapCall`, the Router performs all validation before making the adapt
 4. The first four bytes are exactly one of the two permitted current-main selectors:
    - signed swap: `swap((address,address,uint256,uint256,address,address,uint256,uint48),bytes)`;
    - discount swap: `swap(((address,uint256,address,address,uint256,uint48),bytes,uint48),bytes,address,uint256)`.
-5. No native value is attached to the adapter call.
+5. `authDeadline` is nonzero and `block.timestamp <= authDeadline`.
+6. `authSigner` is currently the adapter's `owner()` or `marketMaker()`, or `isFiller(marketMaker(), authSigner)` is true.
+7. OpenZeppelin `SignatureChecker` accepts `authSignature` for the exact Router EIP-712 payload, supporting EOAs and ERC-1271 signers.
+8. No native value is attached to the adapter call.
 
 All other selectors are rejected, including the unsigned direct-swap overload. The allowlist prevents a user from exercising adapter administration, nonce invalidation, acquisition, withdrawal, or fallback behavior under the Router's identity.
 
@@ -128,7 +137,8 @@ Before transferring any token, the Router:
 - rejects empty `swapCalls` or `outputs`;
 - validates every output token, amount, and recipient;
 - validates every adapter, amount, calldata length, and selector;
-- computes the sum of all leg inputs for the final event; and
+- computes the sum of all leg inputs with checked arithmetic before adapter execution;
+- validates every current adapter signer and Router authorization before funding the first leg; and
 - groups duplicate output tokens and sums their required amounts with checked arithmetic.
 
 Pre-validating the complete request avoids entering external execution with a structurally invalid later leg.
@@ -184,27 +194,31 @@ Only after all final assertions pass does the Router emit its completion event. 
 ## Core Invariants
 
 1. **Registered targets only:** every external call target is a current entity of the immutable LiquidLane adapter factory.
-2. **Two selectors only:** the Router can invoke only the current signed-swap and discount-swap entrypoints.
-3. **No arbitrary execution:** the Router never calls a user-selected non-adapter target, never uses `delegatecall`, and never forwards native value.
-4. **Caller-funded:** every leg pulls from `msg.sender`; no arbitrary payer field exists.
-5. **Direct input routing:** input moves from the swapper directly to the adapter and never through the Router.
-6. **Exact input per leg:** the adapter balance increases by exactly `amountIn` on funding and returns to the same baseline after execution.
-7. **Router-directed outputs:** successful batches rely on the backend encoding the Router as adapter recipient; declared aggregate deltas must arrive at the Router.
-8. **Aggregate minimums:** for each declared output token, transaction-local production is at least the sum of its output entries.
-9. **Exact recipient receipts:** each recipient's balance increases by its declared amount.
-10. **Surplus belongs to the swapper:** all transaction-local declared-token production beyond required outputs is transferred to `msg.sender`.
-11. **Pre-existing balance isolation:** a call can neither spend nor withdraw balances present before that call.
-12. **No successful custody:** after success, each declared token balance equals its pre-call snapshot.
-13. **Atomicity:** no partial batch, partial output, stranded leg prefund, or allow-failure mode exists.
-14. **Reentrancy exclusion:** neither token, adapter, nor recipient callbacks can enter either `execute` overload during execution.
+2. **Current signer authority:** every leg is approved by its adapter's current owner, market maker, or authorized filler.
+3. **Exact Router authorization:** each signature binds the Router domain and chain, caller, `authSigner`, top-level input token, adapter, amount, calldata hash, effective execution deadline, and nonzero authorization deadline.
+4. **Two selectors only:** the Router can invoke only the current signed-swap and discount-swap entrypoints.
+5. **No arbitrary execution:** the Router never calls a user-selected non-adapter target, never uses `delegatecall`, and never forwards native value.
+6. **Caller-funded:** every leg pulls from `msg.sender`; no arbitrary payer field exists.
+7. **Direct input routing:** input moves from the swapper directly to the adapter and never through the Router.
+8. **Exact input per leg:** the adapter balance increases by exactly `amountIn` on funding and returns to the same baseline after execution.
+9. **Router-directed outputs:** successful batches rely on the backend encoding the Router as adapter recipient; declared aggregate deltas must arrive at the Router.
+10. **Aggregate minimums:** for each declared output token, transaction-local production is at least the sum of its output entries.
+11. **Exact recipient receipts:** each recipient's balance increases by its declared amount.
+12. **Surplus belongs to the swapper:** all transaction-local declared-token production beyond required outputs is transferred to `msg.sender`.
+13. **Pre-existing balance isolation:** a call can neither spend nor withdraw balances present before that call.
+14. **No successful custody:** after success, each declared token balance equals its pre-call snapshot.
+15. **Atomicity:** no partial batch, partial output, stranded leg prefund, or allow-failure mode exists.
+16. **Reentrancy exclusion:** neither token, adapter, nor recipient callbacks can enter either `execute` overload during execution.
 
 ## Reentrancy and External-Call Model
 
-Both overloads share a single `nonReentrant` boundary, preferably the same transient-storage OpenZeppelin guard already used by current mainline Reactor under the Cancun EVM target. All validation and snapshots happen inside that boundary.
+Both overloads share one OpenZeppelin `ReentrancyGuard` boundary. The stage compiler remains Solidity 0.8.28, so the Router deliberately does not use transient-storage reentrancy protection. All validation and snapshots happen inside that boundary.
 
 External interactions are limited to:
 
 - factory `isEntity` static calls;
+- adapter `owner`, `marketMaker`, and `isFiller` static calls;
+- optional ERC-1271 signature checks through OpenZeppelin `SignatureChecker`;
 - ERC-20 `balanceOf`, `transferFrom`, and `transfer` calls; and
 - zero-value calls to registered adapters with an allowed selector.
 
@@ -226,6 +240,8 @@ The interface defines concise custom errors for these observable failure classes
 | `InsufficientOutput(token, required, produced)` | Aggregate transaction-local production is below the declared total. |
 | `InvalidAdapter(index, adapter)` | The target is zero or is not a factory entity. |
 | `InvalidAmount(index)` | A swap or output amount is zero. |
+| `InvalidAuthorizationDeadline(index, deadline)` | A Router authorization has a zero or expired deadline. |
+| `InvalidAuthorizationSignature(index, signer)` | The Router EIP-712 signature is invalid for the declared signer. |
 | `InvalidCalldata(index)` | Adapter calldata is shorter than one selector. |
 | `InvalidOutputToken(index, token)` | An output is native, zero, equal to `tokenIn`, or not an ERC-20 contract. |
 | `InvalidRecipient(index, recipient)` | A recipient is zero or the Router. |
@@ -233,6 +249,7 @@ The interface defines concise custom errors for these observable failure classes
 | `InvalidTokenIn(token)` | `tokenIn` is zero or not a contract. |
 | `OutputTransferMismatch(index, expected, actual)` | A declared recipient did not receive exactly the requested amount. |
 | `SurplusTransferMismatch(token, expected, actual)` | The swapper did not receive the exact surplus. |
+| `UnauthorizedAuthSigner(index, adapter, signer)` | The signer is not the adapter's current owner, market maker, or filler. |
 
 The reentrancy guard's standard custom error remains part of the observable surface. Arithmetic overflow uses Solidity's checked-arithmetic panic and is not remapped.
 
@@ -262,7 +279,8 @@ V1 supports ordinary ERC-20 tokens whose balances change exactly by the requeste
 - The immutable factory correctly identifies authentic LiquidLane adapters. Factory compromise or registration of malicious adapters is outside the Router's local trust boundary.
 - Current LiquidLane signed-swap and discount-swap selectors retain their documented semantics.
 - The backend or solver encodes `recipient = Router`; signed swaps additionally encode `caller = Router`. Incorrect encoding normally fails aggregate output validation and reverts.
-- The user authorizes the exact transaction calldata by submitting the transaction. There is no separate Router signature or relayer authorization in V1.
+- The transaction caller authorizes the aggregate settlement by submitting the transaction, while every individual adapter leg also requires a current adapter-authorized Router EIP-712 signature.
+- The Router has no authorization-ID or replay-storage mapping. Both permitted LiquidLane selectors consume adapter nonces, which remain authoritative for replay protection without unbounded Router storage.
 - Output protection is aggregate per token, not per leg. Cross-leg subsidy is accepted because the user receives the declared batch result.
 - Only tokens listed in `outputs` are snapshotted and distributed. Undeclared tokens sent to the Router remain isolated permanently; a later user cannot claim them as transaction-local surplus.
 - There is no rescue function. Recoverability of accidental or forced balances is intentionally sacrificed to keep the pre-existing-balance invariant unconditional and ownerless.
@@ -299,6 +317,16 @@ Create focused Foundry tests in `test/Router.t.sol` with registry, adapter, toke
 - A call that consumes less, more, or a different input token fails the post-call adapter baseline check.
 - A failure on a later leg rolls back earlier adapter calls and transfers.
 - Adapter revert data is reported with the correct index and target.
+
+### Router authorization
+
+- The exact `Router`/`1` EIP-712 domain and primary type hash are pinned.
+- Owner, market-maker, filler, EOA, and ERC-1271 authorizations succeed.
+- A zero or expired authorization deadline fails before funding; deadline equality succeeds.
+- Copying a signed call to another payer or modifying the token, adapter calldata, amount, execution deadline, authorization deadline, signer, or signature fails before funding.
+- Revoking owner, market-maker, or filler authority before execution makes the signer unauthorized.
+- A malformed later authorization is rejected before the first adapter executes.
+- Input-total overflow is rejected before any adapter execution.
 
 ### Output accounting
 
@@ -344,6 +372,7 @@ Add:
 
 - `src/Router.sol`;
 - `src/interfaces/IRouter.sol`;
+- `src/interfaces/ILiquidLaneAdapterAuthorization.sol`;
 - the minimal `src/interfaces/IRegistry.sol` when implementing from the old stage base;
 - `test/Router.t.sol`;
 - `script/deploy/DeployRouter.s.sol`; and
@@ -357,18 +386,19 @@ After deployment, backend and solver configuration must use the deployed Router 
 - `SignedSwap.recipient`; and
 - the discount swap's explicit `recipient` argument.
 
-No adapter filler authorization is needed because V1 rejects the unsigned direct-swap selector. Users approve the input ERC-20 to Router and submit the Router transaction themselves.
+Every solver-produced leg also needs the current adapter-authorized Router signature described above. Users approve the input ERC-20 to Router and submit the Router transaction themselves.
 
 ## Acceptance Criteria
 
 The feature is complete when:
 
 1. Both typed overloads implement the same atomic execution path and the deadline overload expires exactly as specified.
-2. Every leg targets a factory entity and one of exactly two pinned selectors.
-3. Every input leg is transferred directly from the caller, received exactly, and consumed exactly.
-4. No declared output minimum can be satisfied by a pre-existing Router balance.
-5. Every declared recipient receives exactly its amount, every declared-token surplus goes to the caller, and the Router returns to each declared token's starting balance.
-6. Native currency and unsupported token behavior cannot silently participate in a successful batch.
-7. Reentrancy, later-leg failure, adapter failure, and payout failure roll back the entire transaction.
-8. The contract is ownerless, non-upgradeable, nonpayable, and has no rescue or arbitrary-call surface.
-9. Unit, selector-shape, integration, deployment, formatting, size, and gas-snapshot checks pass under the repository's Foundry workflow.
+2. Every leg targets a factory entity, uses one of exactly two pinned selectors, and has a valid unexpired authorization from its adapter's current owner, market maker, or filler.
+3. The authorization binds the caller, signer, input token, adapter, amount, calldata hash, effective execution deadline, and authorization deadline before any leg is funded.
+4. Every input leg is transferred directly from the caller, received exactly, and consumed exactly.
+5. No declared output minimum can be satisfied by a pre-existing Router balance.
+6. Every declared recipient receives exactly its amount, every declared-token surplus goes to the caller, and the Router returns to each declared token's starting balance.
+7. Native currency and unsupported token behavior cannot silently participate in a successful batch.
+8. Reentrancy, later-leg failure, adapter failure, and payout failure roll back the entire transaction.
+9. The contract is ownerless, non-upgradeable, nonpayable, and has no rescue or arbitrary-call surface.
+10. Unit, selector-shape, integration, deployment, formatting, size, and gas-snapshot checks pass under the repository's Foundry workflow.

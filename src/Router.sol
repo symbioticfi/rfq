@@ -2,25 +2,31 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
+import {ILiquidLaneAdapterAuthorization} from "./interfaces/ILiquidLaneAdapterAuthorization.sol";
 import {IRegistry} from "./interfaces/IRegistry.sol";
 import {IRouter} from "./interfaces/IRouter.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 /// @title Router
 /// @notice Atomically funds registered adapters and settles transaction-local output balances.
 /// @custom:security-contact security@symbiotic.fi
-contract Router is IRouter, ReentrancyGuard {
+contract Router is IRouter, EIP712, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     bytes4 internal constant SIGNED_SWAP_SELECTOR = 0x9a4568b6;
     bytes4 internal constant DISCOUNT_SWAP_SELECTOR = 0x8fa5c671;
+    bytes32 public constant SWAP_AUTHORIZATION_TYPEHASH = keccak256(
+        "SwapAuthorization(address swapper,address authSigner,address tokenIn,address adapter,uint256 amountIn,bytes32 dataHash,uint256 executionDeadline,uint256 authorizationDeadline)"
+    );
 
     address public immutable LIQUID_LANE_ADAPTER_FACTORY;
 
-    constructor(address liquidLaneAdapterFactory) {
+    constructor(address liquidLaneAdapterFactory) EIP712("Router", "1") {
         if (liquidLaneAdapterFactory == address(0) || liquidLaneAdapterFactory.code.length == 0) {
             revert InvalidFactory(liquidLaneAdapterFactory);
         }
@@ -29,7 +35,7 @@ contract Router is IRouter, ReentrancyGuard {
 
     /// @inheritdoc IRouter
     function execute(address tokenIn, SwapCall[] calldata calls, Output[] calldata outputs) external nonReentrant {
-        _execute(tokenIn, calls, outputs);
+        _execute(tokenIn, calls, outputs, 0);
     }
 
     /// @inheritdoc IRouter
@@ -37,16 +43,19 @@ contract Router is IRouter, ReentrancyGuard {
         external
         nonReentrant
     {
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert Expired(deadline);
-        _execute(tokenIn, calls, outputs);
+        _execute(tokenIn, calls, outputs, deadline);
     }
 
-    function _execute(address tokenIn, SwapCall[] calldata calls, Output[] calldata outputs) internal {
-        _validate(tokenIn, calls, outputs);
+    function _execute(address tokenIn, SwapCall[] calldata calls, Output[] calldata outputs, uint256 executionDeadline)
+        internal
+    {
+        uint256 totalAmountIn = _validate(tokenIn, calls, outputs, executionDeadline);
 
         (address[] memory tokens, uint256[] memory baselines, uint256[] memory required, uint256 uniqueCount) =
             _snapshotOutputs(outputs);
-        uint256 totalAmountIn = _executeCalls(tokenIn, calls);
+        _executeCalls(tokenIn, calls);
         uint256[] memory produced = _measureOutputs(tokens, baselines, required, uniqueCount);
 
         _transferOutputs(outputs);
@@ -55,7 +64,7 @@ contract Router is IRouter, ReentrancyGuard {
         emit Execute(msg.sender, tokenIn, totalAmountIn, calls.length, outputs.length);
     }
 
-    function _executeCalls(address tokenIn, SwapCall[] calldata calls) internal returns (uint256 totalAmountIn) {
+    function _executeCalls(address tokenIn, SwapCall[] calldata calls) internal {
         IERC20 inputToken = IERC20(tokenIn);
         for (uint256 i; i < calls.length; ++i) {
             SwapCall calldata swapCall = calls[i];
@@ -83,8 +92,6 @@ contract Router is IRouter, ReentrancyGuard {
             if (remaining != adapterBaseline) {
                 revert InputConsumptionMismatch(i, adapterBaseline, remaining);
             }
-
-            totalAmountIn += swapCall.amountIn;
         }
     }
 
@@ -190,7 +197,11 @@ contract Router is IRouter, ReentrancyGuard {
         }
     }
 
-    function _validate(address tokenIn, SwapCall[] calldata calls, Output[] calldata outputs) internal view {
+    function _validate(address tokenIn, SwapCall[] calldata calls, Output[] calldata outputs, uint256 executionDeadline)
+        internal
+        view
+        returns (uint256 totalAmountIn)
+    {
         if (tokenIn == address(0) || tokenIn.code.length == 0) revert InvalidTokenIn(tokenIn);
         if (calls.length == 0) revert EmptySwapCalls();
         if (outputs.length == 0) revert EmptyOutputs();
@@ -206,22 +217,65 @@ contract Router is IRouter, ReentrancyGuard {
             if (output.amount == 0) revert InvalidAmount(i);
         }
 
-        IRegistry registry = IRegistry(LIQUID_LANE_ADAPTER_FACTORY);
         for (uint256 i; i < calls.length; ++i) {
             SwapCall calldata swapCall = calls[i];
-            if (
-                swapCall.adapter == address(0) || swapCall.adapter.code.length == 0
-                    || !registry.isEntity(swapCall.adapter)
-            ) {
+            if (swapCall.adapter == address(0) || swapCall.adapter.code.length == 0) {
                 revert InvalidAdapter(i, swapCall.adapter);
             }
             if (swapCall.amountIn == 0) revert InvalidAmount(i);
+            totalAmountIn += swapCall.amountIn;
             if (swapCall.data.length < 4) revert InvalidCalldata(i);
 
             bytes4 selector = _selector(swapCall.data);
             if (selector != SIGNED_SWAP_SELECTOR && selector != DISCOUNT_SWAP_SELECTOR) {
                 revert InvalidSelector(i, selector);
             }
+        }
+
+        IRegistry registry = IRegistry(LIQUID_LANE_ADAPTER_FACTORY);
+        for (uint256 i; i < calls.length; ++i) {
+            SwapCall calldata swapCall = calls[i];
+            if (!registry.isEntity(swapCall.adapter)) revert InvalidAdapter(i, swapCall.adapter);
+            _validateAuthorization(tokenIn, swapCall, i, executionDeadline);
+        }
+    }
+
+    function _validateAuthorization(
+        address tokenIn,
+        SwapCall calldata swapCall,
+        uint256 index,
+        uint256 executionDeadline
+    ) internal view {
+        // forge-lint: disable-next-line(block-timestamp)
+        if (swapCall.authDeadline == 0 || block.timestamp > swapCall.authDeadline) {
+            revert InvalidAuthorizationDeadline(index, swapCall.authDeadline);
+        }
+
+        ILiquidLaneAdapterAuthorization adapter = ILiquidLaneAdapterAuthorization(swapCall.adapter);
+        address signer = swapCall.authSigner;
+        if (signer != adapter.owner()) {
+            address marketMaker = adapter.marketMaker();
+            if (signer != marketMaker && !adapter.isFiller(marketMaker, signer)) {
+                revert UnauthorizedAuthSigner(index, swapCall.adapter, signer);
+            }
+        }
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                SWAP_AUTHORIZATION_TYPEHASH,
+                msg.sender,
+                signer,
+                tokenIn,
+                swapCall.adapter,
+                swapCall.amountIn,
+                keccak256(swapCall.data),
+                executionDeadline,
+                swapCall.authDeadline
+            )
+        );
+        if (!SignatureChecker.isValidSignatureNowCalldata(signer, _hashTypedDataV4(structHash), swapCall.authSignature))
+        {
+            revert InvalidAuthorizationSignature(index, signer);
         }
     }
 

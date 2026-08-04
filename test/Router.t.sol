@@ -4,6 +4,9 @@ pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 
+import {IERC5267} from "@openzeppelin/contracts/interfaces/IERC5267.sol";
+import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+
 import {Router} from "../src/Router.sol";
 import {IRouter} from "../src/interfaces/IRouter.sol";
 import {DeployRouterScript} from "../script/deploy/DeployRouter.s.sol";
@@ -13,6 +16,23 @@ contract MockRegistry {
 
     function setEntity(address entity, bool registered) external {
         isEntity[entity] = registered;
+    }
+}
+
+contract Mock1271Signer {
+    bytes32 public expectedDigest;
+    bytes32 public expectedSignatureHash;
+
+    function setExpected(bytes32 digest, bytes calldata signature) external {
+        expectedDigest = digest;
+        expectedSignatureHash = keccak256(signature);
+    }
+
+    function isValidSignature(bytes32 digest, bytes calldata signature) external view returns (bytes4) {
+        if (digest == expectedDigest && keccak256(signature) == expectedSignatureHash) {
+            return IERC1271.isValidSignature.selector;
+        }
+        return 0xffffffff;
     }
 }
 
@@ -81,6 +101,9 @@ contract MockAdapter {
     MockERC20 public immutable inputToken;
     MockERC20 public immutable outputToken;
     address public immutable router;
+    address public owner;
+    address public marketMaker;
+    mapping(address maker => mapping(address filler => bool authorized)) public isFiller;
     uint256 public outputAmount;
     uint256 public leaveInput;
     uint256 public callCount;
@@ -97,6 +120,18 @@ contract MockAdapter {
     function configure(uint256 outputAmount_, uint256 leaveInput_) external {
         outputAmount = outputAmount_;
         leaveInput = leaveInput_;
+    }
+
+    function setOwner(address owner_) external {
+        owner = owner_;
+    }
+
+    function setMarketMaker(address marketMaker_) external {
+        marketMaker = marketMaker_;
+    }
+
+    function setFiller(address maker, address filler, bool authorized) external {
+        isFiller[maker][filler] = authorized;
     }
 
     function setShouldRevert(bool status) external {
@@ -132,9 +167,15 @@ contract MockAdapter {
 contract RouterTest is Test {
     bytes4 internal constant SIGNED_SWAP_SELECTOR = 0x9a4568b6;
     bytes4 internal constant DISCOUNT_SWAP_SELECTOR = 0x8fa5c671;
+    bytes32 internal constant DOMAIN_TYPEHASH = 0x8b73c3c69bb8fe3d512ecc4cf759cc79239f7b179b0ffacaa9a75d522b39400f;
+    bytes32 internal constant SWAP_AUTHORIZATION_TYPEHASH =
+        0xc1a9681894ce21cd15802373fbf380e6fb5ea302fce47e912d119686bb4eb349;
+    uint256 internal constant AUTH_SIGNER_PRIVATE_KEY = 0xA11CE;
+    uint256 internal constant AUTHORIZATION_DEADLINE = type(uint256).max;
 
     address internal swapper = makeAddr("swapper");
     address internal recipient = makeAddr("recipient");
+    address internal authSigner;
     MockRegistry internal registry;
     MockERC20 internal inputToken;
     MockERC20 internal outputToken;
@@ -144,6 +185,7 @@ contract RouterTest is Test {
     MockAdapter internal adapter1;
 
     function setUp() public {
+        authSigner = vm.addr(AUTH_SIGNER_PRIVATE_KEY);
         registry = new MockRegistry();
         router = new Router(address(registry));
         inputToken = new MockERC20("Input", "IN");
@@ -153,7 +195,9 @@ contract RouterTest is Test {
         adapter1 = new MockAdapter(inputToken, outputToken, address(router));
         registry.setEntity(address(adapter0), true);
         registry.setEntity(address(adapter1), true);
-        inputToken.mint(swapper, 1_000 ether);
+        adapter0.setOwner(authSigner);
+        adapter1.setOwner(authSigner);
+        inputToken.mint(swapper, 1000 ether);
         vm.prank(swapper);
         inputToken.approve(address(router), type(uint256).max);
     }
@@ -282,7 +326,16 @@ contract RouterTest is Test {
 
     function testRejectsShortCalldata() public {
         IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](1);
-        calls[0] = IRouter.SwapCall({adapter: address(adapter0), amountIn: 1 ether, data: hex"9a4568"});
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            hex"9a4568",
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
         vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidCalldata.selector, 0));
         router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
     }
@@ -307,16 +360,425 @@ contract RouterTest is Test {
         assertEq(outputToken.balanceOf(recipient), 1 ether);
     }
 
+    function testAcceptsAuthorizationFromAdapterMarketMaker() public {
+        adapter0.setOwner(makeAddr("otherOwner"));
+        adapter0.setMarketMaker(authSigner);
+        adapter0.configure(1 ether, 0);
+
+        vm.prank(swapper);
+        router.execute(
+            address(inputToken),
+            _oneCall(address(adapter0), 1 ether, SIGNED_SWAP_SELECTOR),
+            _oneOutput(address(outputToken), 1 ether, recipient)
+        );
+
+        assertEq(outputToken.balanceOf(recipient), 1 ether);
+    }
+
+    function testAcceptsAuthorizationFromAdapterFiller() public {
+        address marketMaker = makeAddr("marketMaker");
+        adapter0.setOwner(makeAddr("otherOwner"));
+        adapter0.setMarketMaker(marketMaker);
+        adapter0.setFiller(marketMaker, authSigner, true);
+        adapter0.configure(1 ether, 0);
+
+        vm.prank(swapper);
+        router.execute(
+            address(inputToken),
+            _oneCall(address(adapter0), 1 ether, SIGNED_SWAP_SELECTOR),
+            _oneOutput(address(outputToken), 1 ether, recipient)
+        );
+
+        assertEq(outputToken.balanceOf(recipient), 1 ether);
+    }
+
+    function testAcceptsAuthorizationDeadlineEquality() public {
+        vm.warp(100);
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](1);
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            100,
+            100,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        adapter0.configure(1 ether, 0);
+
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient), 100);
+
+        assertEq(outputToken.balanceOf(recipient), 1 ether);
+    }
+
+    function testAcceptsErc1271AdapterOwnerAuthorization() public {
+        Mock1271Signer contractSigner = new Mock1271Signer();
+        bytes memory data = abi.encodePacked(SIGNED_SWAP_SELECTOR);
+        bytes memory signature = hex"cafe";
+        bytes32 digest = _authorizationDigest(
+            swapper,
+            address(contractSigner),
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            data,
+            0,
+            AUTHORIZATION_DEADLINE
+        );
+        contractSigner.setExpected(digest, signature);
+        adapter0.setOwner(address(contractSigner));
+        adapter0.configure(1 ether, 0);
+
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](1);
+        calls[0] = IRouter.SwapCall({
+            adapter: address(adapter0),
+            amountIn: 1 ether,
+            data: data,
+            authSigner: address(contractSigner),
+            authDeadline: AUTHORIZATION_DEADLINE,
+            authSignature: signature
+        });
+
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(outputToken.balanceOf(recipient), 1 ether);
+    }
+
+    function testUsesExactRouterEip712Domain() public view {
+        (
+            bytes1 fields,
+            string memory name,
+            string memory version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt,
+            uint256[] memory extensions
+        ) = IERC5267(address(router)).eip712Domain();
+
+        assertEq(fields, hex"0f");
+        assertEq(name, "Router");
+        assertEq(version, "1");
+        assertEq(chainId, block.chainid);
+        assertEq(verifyingContract, address(router));
+        assertEq(salt, bytes32(0));
+        assertEq(extensions.length, 0);
+        assertEq(router.SWAP_AUTHORIZATION_TYPEHASH(), SWAP_AUTHORIZATION_TYPEHASH);
+    }
+
+    function testCopiedAuthorizationCannotUseAttackerAsPayer() public {
+        address attacker = makeAddr("attacker");
+        inputToken.mint(attacker, 1 ether);
+        vm.prank(attacker);
+        inputToken.approve(address(router), 1 ether);
+        IRouter.SwapCall[] memory calls = _oneCall(address(adapter0), 1 ether, SIGNED_SWAP_SELECTOR);
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationSignature.selector, 0, calls[0].authSigner));
+        vm.prank(attacker);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(attacker), 1 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testModifiedCalldataInvalidatesAuthorizationBeforeFunding() public {
+        IRouter.SwapCall[] memory calls = _oneCall(address(adapter0), 1 ether, SIGNED_SWAP_SELECTOR);
+        calls[0].data = bytes.concat(calls[0].data, hex"01");
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationSignature.selector, 0, calls[0].authSigner));
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testModifiedAmountInvalidatesAuthorizationBeforeFunding() public {
+        IRouter.SwapCall[] memory calls = _oneCall(address(adapter0), 1 ether, SIGNED_SWAP_SELECTOR);
+        calls[0].amountIn = 2 ether;
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationSignature.selector, 0, calls[0].authSigner));
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testModifiedExecutionDeadlineInvalidatesAuthorizationBeforeFunding() public {
+        vm.warp(100);
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](1);
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            200,
+            300,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationSignature.selector, 0, calls[0].authSigner));
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient), 201);
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testModifiedAuthorizationDeadlineInvalidatesAuthorizationBeforeFunding() public {
+        vm.warp(100);
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](1);
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            300,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        calls[0].authDeadline = 301;
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationSignature.selector, 0, calls[0].authSigner));
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testModifiedTokenInInvalidatesAuthorizationBeforeFunding() public {
+        IRouter.SwapCall[] memory calls = _oneCall(address(adapter0), 1 ether, SIGNED_SWAP_SELECTOR);
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationSignature.selector, 0, calls[0].authSigner));
+        vm.prank(swapper);
+        router.execute(address(outputToken), calls, _oneOutput(address(secondOutputToken), 1 ether, recipient));
+
+        assertEq(outputToken.balanceOf(swapper), 0);
+        assertEq(outputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testModifiedSignatureFailsBeforeFunding() public {
+        IRouter.SwapCall[] memory calls = _oneCall(address(adapter0), 1 ether, SIGNED_SWAP_SELECTOR);
+        calls[0].authSignature[0] = bytes1(uint8(calls[0].authSignature[0]) ^ 1);
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationSignature.selector, 0, calls[0].authSigner));
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testRejectsZeroAuthorizationDeadlineBeforeFunding() public {
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](1);
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            0,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationDeadline.selector, 0, 0));
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testRejectsExpiredAuthorizationDeadlineBeforeFunding() public {
+        vm.warp(101);
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](1);
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            100,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAuthorizationDeadline.selector, 0, 100));
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testRejectsUnauthorizedAuthSignerBeforeFunding() public {
+        uint256 unauthorizedPrivateKey = 0xB0B;
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](1);
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            unauthorizedPrivateKey
+        );
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRouter.UnauthorizedAuthSigner.selector, 0, address(adapter0), vm.addr(unauthorizedPrivateKey)
+            )
+        );
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testRejectsRevokedAuthSignerBeforeFunding() public {
+        IRouter.SwapCall[] memory calls = _oneCall(address(adapter0), 1 ether, SIGNED_SWAP_SELECTOR);
+        adapter0.setOwner(makeAddr("newOwner"));
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IRouter.UnauthorizedAuthSigner.selector, 0, address(adapter0), authSigner)
+        );
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
+    function testValidatesEveryAuthorizationBeforeFirstAdapterExecution() public {
+        uint256 unauthorizedPrivateKey = 0xB0B;
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](2);
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            1 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        calls[1] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter1),
+            1 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            unauthorizedPrivateKey
+        );
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IRouter.UnauthorizedAuthSigner.selector, 1, address(adapter1), vm.addr(unauthorizedPrivateKey)
+            )
+        );
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1 ether, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(inputToken.balanceOf(address(adapter1)), 0);
+        assertEq(adapter0.callCount(), 0);
+        assertEq(adapter1.callCount(), 0);
+    }
+
+    function testInputTotalOverflowRevertsBeforeAdapterExecution() public {
+        inputToken.burn(swapper, 1000 ether);
+        inputToken.mint(swapper, type(uint256).max);
+        IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](2);
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            type(uint256).max,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        calls[1] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter1),
+            1,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        adapter0.setShouldRevert(true);
+
+        vm.expectRevert(abi.encodeWithSignature("Panic(uint256)", 0x11));
+        vm.prank(swapper);
+        router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 1, recipient));
+
+        assertEq(inputToken.balanceOf(swapper), type(uint256).max);
+        assertEq(inputToken.balanceOf(address(adapter0)), 0);
+        assertEq(adapter0.callCount(), 0);
+    }
+
     function testTransfersEachInputDirectlyAndCallsAllAdapters() public {
         adapter0.configure(4 ether, 0);
         adapter1.configure(6 ether, 0);
         IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](2);
-        calls[0] = IRouter.SwapCall({
-            adapter: address(adapter0), amountIn: 4 ether, data: abi.encodePacked(SIGNED_SWAP_SELECTOR)
-        });
-        calls[1] = IRouter.SwapCall({
-            adapter: address(adapter1), amountIn: 6 ether, data: abi.encodePacked(DISCOUNT_SWAP_SELECTOR)
-        });
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            4 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        calls[1] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter1),
+            6 ether,
+            abi.encodePacked(DISCOUNT_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
 
         vm.prank(swapper);
         router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 10 ether, recipient));
@@ -393,18 +855,32 @@ contract RouterTest is Test {
         adapter0.configure(4 ether, 0);
         adapter1.setShouldRevert(true);
         IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](2);
-        calls[0] = IRouter.SwapCall({
-            adapter: address(adapter0), amountIn: 4 ether, data: abi.encodePacked(SIGNED_SWAP_SELECTOR)
-        });
-        calls[1] = IRouter.SwapCall({
-            adapter: address(adapter1), amountIn: 6 ether, data: abi.encodePacked(SIGNED_SWAP_SELECTOR)
-        });
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter0),
+            4 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+        calls[1] = _signedCall(
+            swapper,
+            address(inputToken),
+            address(adapter1),
+            6 ether,
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
 
         vm.expectRevert();
         vm.prank(swapper);
         router.execute(address(inputToken), calls, _oneOutput(address(outputToken), 10 ether, recipient));
 
-        assertEq(inputToken.balanceOf(swapper), 1_000 ether);
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
         assertEq(outputToken.balanceOf(address(router)), 0);
         assertEq(adapter0.callCount(), 0);
     }
@@ -518,17 +994,80 @@ contract RouterTest is Test {
             _oneCall(address(adapter0), 10 ether, SIGNED_SWAP_SELECTOR),
             _oneOutput(address(outputToken), 10 ether, recipient)
         );
-        assertEq(inputToken.balanceOf(swapper), 1_000 ether);
+        assertEq(inputToken.balanceOf(swapper), 1000 ether);
         assertEq(outputToken.balanceOf(recipient), 0);
     }
 
     function _oneCall(address adapter, uint256 amountIn, bytes4 selector)
         internal
-        pure
+        view
         returns (IRouter.SwapCall[] memory calls)
     {
         calls = new IRouter.SwapCall[](1);
-        calls[0] = IRouter.SwapCall({adapter: adapter, amountIn: amountIn, data: abi.encodePacked(selector)});
+        calls[0] = _signedCall(
+            swapper,
+            address(inputToken),
+            adapter,
+            amountIn,
+            abi.encodePacked(selector),
+            0,
+            AUTHORIZATION_DEADLINE,
+            AUTH_SIGNER_PRIVATE_KEY
+        );
+    }
+
+    function _signedCall(
+        address intendedSwapper,
+        address tokenIn,
+        address adapter,
+        uint256 amountIn,
+        bytes memory data,
+        uint256 executionDeadline,
+        uint256 authorizationDeadline,
+        uint256 signerPrivateKey
+    ) internal view returns (IRouter.SwapCall memory swapCall) {
+        address signer = vm.addr(signerPrivateKey);
+        bytes32 digest = _authorizationDigest(
+            intendedSwapper, signer, tokenIn, adapter, amountIn, data, executionDeadline, authorizationDeadline
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerPrivateKey, digest);
+        swapCall = IRouter.SwapCall({
+            adapter: adapter,
+            amountIn: amountIn,
+            data: data,
+            authSigner: signer,
+            authDeadline: authorizationDeadline,
+            authSignature: abi.encodePacked(r, s, v)
+        });
+    }
+
+    function _authorizationDigest(
+        address intendedSwapper,
+        address signer,
+        address tokenIn,
+        address adapter,
+        uint256 amountIn,
+        bytes memory data,
+        uint256 executionDeadline,
+        uint256 authorizationDeadline
+    ) internal view returns (bytes32) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(DOMAIN_TYPEHASH, keccak256("Router"), keccak256("1"), block.chainid, address(router))
+        );
+        bytes32 structHash = keccak256(
+            abi.encode(
+                SWAP_AUTHORIZATION_TYPEHASH,
+                intendedSwapper,
+                signer,
+                tokenIn,
+                adapter,
+                amountIn,
+                keccak256(data),
+                executionDeadline,
+                authorizationDeadline
+            )
+        );
+        return keccak256(abi.encodePacked(hex"1901", domainSeparator, structHash));
     }
 
     function _oneOutput(address token, uint256 amount, address to)
