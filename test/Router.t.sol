@@ -349,15 +349,15 @@ contract RouterTest is Test {
         );
     }
 
-    function testAcceptsDiscountSelector() public {
+    function testRejectsDiscountSelector() public {
         adapter0.configure(1 ether, 0);
+        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidSelector.selector, 0, DISCOUNT_SWAP_SELECTOR));
         vm.prank(swapper);
         router.execute(
             address(inputToken),
             _oneCall(address(adapter0), 1 ether, DISCOUNT_SWAP_SELECTOR),
             _oneOutput(address(outputToken), 1 ether, recipient)
         );
-        assertEq(outputToken.balanceOf(recipient), 1 ether);
     }
 
     function testAcceptsAuthorizationFromAdapterMarketMaker() public {
@@ -774,7 +774,7 @@ contract RouterTest is Test {
             address(inputToken),
             address(adapter1),
             6 ether,
-            abi.encodePacked(DISCOUNT_SWAP_SELECTOR),
+            abi.encodePacked(SIGNED_SWAP_SELECTOR),
             0,
             AUTHORIZATION_DEADLINE,
             AUTH_SIGNER_PRIVATE_KEY

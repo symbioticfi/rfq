@@ -19,7 +19,6 @@ contract Router is IRouter, EIP712, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     bytes4 internal constant SIGNED_SWAP_SELECTOR = 0x9a4568b6;
-    bytes4 internal constant DISCOUNT_SWAP_SELECTOR = 0x8fa5c671;
     bytes32 public constant SWAP_AUTHORIZATION_TYPEHASH = keccak256(
         "SwapAuthorization(address swapper,address authSigner,address tokenIn,address adapter,uint256 amountIn,bytes32 dataHash,uint256 executionDeadline,uint256 authorizationDeadline)"
     );
@@ -227,7 +226,7 @@ contract Router is IRouter, EIP712, ReentrancyGuard {
             if (swapCall.data.length < 4) revert InvalidCalldata(i);
 
             bytes4 selector = _selector(swapCall.data);
-            if (selector != SIGNED_SWAP_SELECTOR && selector != DISCOUNT_SWAP_SELECTOR) {
+            if (selector != SIGNED_SWAP_SELECTOR) {
                 revert InvalidSelector(i, selector);
             }
         }

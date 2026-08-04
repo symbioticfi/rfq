@@ -34,7 +34,7 @@ This directory contains the core RFQ settlement contracts used by the Symbiotic 
 4. `Router.execute(tokenIn, calls, outputs, deadline)` validates every authorization before funding, transfers each leg directly from the user to its adapter, invokes the provided calldata, and pays the declared recipients.
 5. Any transaction-local surplus is returned to the caller; balances that predate the call are never used for settlement.
 
-The Router supports standard ERC-20 tokens and distinct input/output tokens only. Every adapter must be registered by `LIQUID_LANE_ADAPTER_FACTORY`, and calldata must use either the signed-swap selector `0x9a4568b6` or discount-swap selector `0x8fa5c671`. The batch is atomic: a failed authorization, leg, or unmet output reverts every transfer.
+The Router supports standard ERC-20 tokens and distinct input/output tokens only. Every adapter must be registered by `LIQUID_LANE_ADAPTER_FACTORY`, and calldata must use the signed-swap selector `0x9a4568b6`. Discount-swap calldata is rejected: a private discount may inform solver pricing, but the selected leg must be returned as a fresh signed swap bound to the Router. The batch is atomic: a failed authorization, leg, or unmet output reverts every transfer.
 
 Each `SwapCall` has the ABI tuple order `(adapter, amountIn, data, authSigner, authDeadline, authSignature)`. The signature uses EIP-712 domain name `Router`, version `1`, the active chain ID, and the deployed Router as verifying contract. Its exact primary type is:
 
@@ -44,7 +44,7 @@ SwapAuthorization(address swapper,address authSigner,address tokenIn,address ada
 
 `dataHash` is `keccak256(data)`. `swapper` is the transaction caller, `tokenIn` is the top-level input token, and `authSigner` is the signer supplied in the call. `executionDeadline` is the deadline-overload argument, or zero for the no-deadline overload. `authorizationDeadline` is `authDeadline`; it must be nonzero and not expired. The Router checks that `authSigner` is currently the adapter owner or market maker, or is currently authorized through `isFiller(marketMaker, authSigner)`, then verifies `authSignature` with OpenZeppelin `SignatureChecker` so EOA and ERC-1271 signers are supported.
 
-The Router does not add replay storage. The permitted LiquidLane signed-swap and discount-swap calls consume their own adapter nonces, which remain the authoritative replay protection.
+The Router does not add replay storage. The permitted LiquidLane signed-swap call consumes its adapter nonce, which remains the authoritative replay protection.
 
 ## Test locally
 

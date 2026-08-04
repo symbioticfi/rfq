@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add an ownerless `Router` that atomically funds registered LiquidLane adapters from the caller, executes signed or discounted swap calldata, and distributes transaction-local ERC-20 output deltas.
+**Goal:** Add an ownerless `Router` that atomically funds registered LiquidLane adapters from the caller, executes signed-swap calldata, and distributes transaction-local ERC-20 output deltas.
 
 **Architecture:** `IRouter` fixes the typed batch ABI, per-leg EIP-712 authorization, allowed selectors, errors, and events. `Router` validates the entire batch and every current adapter signer before funding, snapshots unique output-token balances, transfers each leg directly from `msg.sender` to its registered adapter, calls the adapter, verifies exact input consumption, enforces aggregate outputs, pays recipients, and returns surplus while preserving pre-existing balances.
 
@@ -15,9 +15,9 @@
 - ABI field order is `SwapCall(adapter, amountIn, data, authSigner, authDeadline, authSignature)` and `Output(token, recipient, amount)`.
 - Every leg uses EIP-712 domain `Router` version `1` and the exact `SwapAuthorization(address swapper,address authSigner,address tokenIn,address adapter,uint256 amountIn,bytes32 dataHash,uint256 executionDeadline,uint256 authorizationDeadline)` primary type.
 - Require a nonzero, unexpired `authDeadline`, current adapter owner/market-maker/filler authority, and a valid OpenZeppelin `SignatureChecker` result before funding any leg.
-- Prevalidate the total input sum with checked arithmetic before adapter execution. Replay protection remains in the nonces consumed by the two allowed adapter selectors; do not add Router replay storage.
+- Prevalidate the total input sum with checked arithmetic before adapter execution. Replay protection remains in the nonce consumed by the allowed signed-swap selector; do not add Router replay storage.
 - Expose both nonpayable overloads: `execute(tokenIn,calls,outputs)` and `execute(tokenIn,calls,outputs,deadline)`.
-- Allow only selector `0x9a4568b6` (signed swap) and `0x8fa5c671` (discount swap).
+- Allow only selector `0x9a4568b6` (signed swap). Reject `0x8fa5c671` (discount swap): a private discount may inform pricing, but the selected leg must be rebuilt as a fresh signed swap bound to the Router.
 - Validate every adapter through immutable `IRegistry(factory).isEntity(adapter)`.
 - Use `call`, never `delegatecall`, and forward zero native value.
 - Transfer every leg directly from `msg.sender` to its adapter; Router must never custody input.
@@ -138,7 +138,6 @@ Create `Router.sol` inheriting `IRouter, ReentrancyGuard`. Constructor-reject a 
 
 ```solidity
 bytes4 internal constant SIGNED_SWAP_SELECTOR = 0x9a4568b6;
-bytes4 internal constant DISCOUNT_SWAP_SELECTOR = 0x8fa5c671;
 
 function _selector(bytes calldata data) internal pure returns (bytes4 selector) {
     assembly ("memory-safe") { selector := calldataload(data.offset) }
@@ -182,7 +181,7 @@ git commit -m "feat: add typed Router interface"
 
 - [ ] **Step 1: Write failing direct-funding tests**
 
-Extend the mocks with a registered adapter that accepts the two selectors, consumes its prefunded input, transfers output to the Router, optionally reverts, and records calldata. Add tests for one leg, multiple adapters, call order, missing allowance, fee-on-transfer input, under-consumption, adapter revert data, and late-leg rollback:
+Extend the mocks with a registered adapter that accepts the signed selector, consumes its prefunded input, transfers output to the Router, optionally reverts, and records calldata. Keep a discount-selector mock path only for the explicit Router-rejection regression. Add tests for one leg, multiple adapters, call order, missing allowance, fee-on-transfer input, under-consumption, adapter revert data, and late-leg rollback:
 
 ```solidity
 function testTransfersEachInputDirectlyAndCallsInOrder() public {
@@ -345,7 +344,7 @@ git commit -m "feat: settle Router output deltas"
 **Interfaces:**
 
 - Produces `DeployRouterScript.run() returns (Router)` using `LIQUID_LANE_ADAPTER_FACTORY`.
-- Documents approval, typed execution, signed/discount selector restriction, and deployment.
+- Documents approval, typed execution, the signed-only selector restriction, and deployment.
 
 - [ ] **Step 1: Write a failing deployment-script assertion**
 
@@ -387,7 +386,7 @@ contract DeployRouterScript is Script {
 
 - [ ] **Step 4: Document the exact user flow**
 
-Add Router to `README.md`: approve input ERC-20 to Router, obtain backend `/swap` transaction, submit typed deadline `execute`, and note that only registered signed/discount calls, standard ERC-20, and distinct token pairs are supported. Add a deployment command using `LIQUID_LANE_ADAPTER_FACTORY`.
+Add Router to `README.md`: approve input ERC-20 to Router, obtain backend `/swap` transaction, submit typed deadline `execute`, and note that only registered signed-swap calls, standard ERC-20, and distinct token pairs are supported. Document that discount calldata is rejected and must be rebuilt as a fresh signed swap. Add a deployment command using `LIQUID_LANE_ADAPTER_FACTORY`.
 
 - [ ] **Step 5: Run package verification**
 

@@ -7,7 +7,7 @@ interface IRouter {
     /// @notice One authenticated adapter leg.
     /// @param adapter Factory-registered LiquidLane adapter that receives the input and executes `data`.
     /// @param amountIn Exact common input-token amount funded directly from the caller.
-    /// @param data Complete signed-swap or discount-swap adapter calldata.
+    /// @param data Complete signed-swap adapter calldata.
     /// @param authSigner Current adapter owner, market maker, or authorized filler that approved this Router leg.
     /// @param authDeadline Nonzero Router-authorization expiry included in the signed payload.
     /// @param authSignature EIP-712 signature over this leg, its payer, token, and effective execution deadline.
