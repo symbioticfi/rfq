@@ -12,7 +12,6 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 
 /// @title Router
 /// @notice Atomically funds registered adapters and transfers their outputs to declared recipients.
-/// @custom:security-contact security@symbiotic.fi
 contract Router is IRouter, ReentrancyGuard {
     using Address for address;
     using SafeERC20 for IERC20;
