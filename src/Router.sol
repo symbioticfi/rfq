@@ -14,6 +14,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 /// @notice Atomically funds registered adapters and transfers their outputs to declared recipients.
 /// @custom:security-contact security@symbiotic.fi
 contract Router is IRouter, ReentrancyGuard {
+    using Address for address;
     using SafeERC20 for IERC20;
 
     /// @notice Factory registry used to validate LiquidLane adapter targets.
@@ -29,11 +30,11 @@ contract Router is IRouter, ReentrancyGuard {
         for (uint256 i; i < callsLength; ++i) {
             SwapCall calldata swapCall = calls[i];
             if (!IRegistry(LIQUID_LANE_ADAPTER_FACTORY).isEntity(swapCall.adapter)) {
-                revert InvalidAdapter(i, swapCall.adapter);
+                revert InvalidAdapter();
             }
 
             IERC20(tokenIn).safeTransferFrom(msg.sender, swapCall.adapter, swapCall.amountIn);
-            Address.functionCall(swapCall.adapter, swapCall.data);
+            swapCall.adapter.functionCall(swapCall.data);
         }
 
         uint256 outputsLength = outputs.length;

@@ -269,7 +269,7 @@ contract RouterTest is Test {
 
     function testRejectsUnregisteredAdapterBeforeFundingIt() public {
         registry.setEntity(address(adapter0), false);
-        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAdapter.selector, 0, address(adapter0)));
+        vm.expectRevert(IRouter.InvalidAdapter.selector);
 
         vm.prank(swapper);
         router.execute(address(inputToken), _oneCall(address(adapter0), 1 ether, hex"00"), new IRouter.Output[](0));
@@ -284,7 +284,7 @@ contract RouterTest is Test {
         IRouter.SwapCall[] memory calls = new IRouter.SwapCall[](2);
         calls[0] = _call(address(adapter0), 4 ether, hex"01");
         calls[1] = _call(address(adapter1), 6 ether, hex"02");
-        vm.expectRevert(abi.encodeWithSelector(IRouter.InvalidAdapter.selector, 1, address(adapter1)));
+        vm.expectRevert(IRouter.InvalidAdapter.selector);
 
         vm.prank(swapper);
         router.execute(address(inputToken), calls, new IRouter.Output[](0));
