@@ -18,33 +18,30 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title FlashLoanCapability
-/// @notice Borrows one asset from Aave v3, Balancer v2, or Morpho Blue and runs the caller's calls
-///         with the borrowed liquidity.
+/// @notice Borrows from Aave v3, Balancer v2, or Morpho Blue and runs the calls it was handed.
 ///
-/// @dev A standalone contract, not a base class. The router reaches it the same way it reaches any
-///      other venue — as one entry in its call list — so a flash loan is composed rather than built
-///      into the router. That keeps the router ignorant of lending, and lets a loan wrap calls that
-///      have nothing to do with one.
+/// @dev A venue, not a base class. The router reaches it as one entry in its call list, so a flash
+///      loan is composed rather than built into the router.
 ///
-///      Modelled on `FlashLoanCapability` in symbioticfi/reinsurance, reduced to the part that
-///      matters here. That version hands the borrowed funds to a vault and runs verified actions
-///      through a manager; this one holds the funds for the duration and runs the calls it was
-///      given.
+///      Every provider callback does the same two things: decode `Call[]`, run them. Repaying the
+///      lender is part of that list, composed by whoever asked for the loan — this contract does
+///      not model fees, does not decide how a provider is repaid, and does not need to know which
+///      provider it is talking to beyond dispatching the initial request.
 ///
-///      `Provider` selects which interface to speak, never which lender to trust — the address is
-///      supplied per call. A caller-controlled provider can therefore report any fee it likes, so
-///      the fee is never trusted for anything but repayment, and callers must impose their own
-///      economic bounds (the router's `Output.minAmount` is where that belongs).
+///      **This contract is unauthenticated by design, and safe only because it is empty.** Anyone
+///      may call `flashLoan`, and anyone may call a callback directly with calls of their choosing;
+///      the callbacks do not check that a loan is in flight. That grants no capability that
+///      `flashLoan` does not already give the same caller for free. What makes it acceptable is
+///      that this contract holds nothing to steal: it has no allowances (users approve the relayer,
+///      which answers only to its router), and it sweeps its balance to the caller at the end of
+///      every request. Anything that changes either of those facts — a token left at rest, an
+///      allowance granted to this address — reintroduces the authentication requirement, and the
+///      transient-hash guard from `FlashLoanCapability` in symbioticfi/reinsurance is the pattern
+///      to restore.
 ///
-///      This contract holds no allowances. Users approve the relayer, and the relayer only answers
-///      to the router, so nothing here can be made to spend anyone's tokens. What it does hold is
-///      borrowed liquidity, for the length of one call — hence the sweep.
-///
-///      Callbacks are authenticated from transient storage (EIP-1153): the request hash is
-///      committed immediately before calling the provider, and each callback recomputes it using
-///      its own `msg.sender` as the provider, so only the exact lender of the exact in-flight loan
-///      can drive it. Loans may nest, so the guard is stacked on the call stack rather than
-///      cleared, and an inner loan cannot clear the hash its parent is still serviced under.
+///      A consequence worth stating: a caller can make this contract approve or transfer to an
+///      address of their choosing, because a call list can say anything. Only the sweep keeps that
+///      from mattering, so the sweep is load-bearing rather than tidy-up.
 contract FlashLoanCapability is
     IFlashLoanCapability,
     IFlashLoanBalancerRecipient,
@@ -54,110 +51,60 @@ contract FlashLoanCapability is
     using Address for address;
     using SafeERC20 for IERC20;
 
-    /// @dev Hash of the loan being serviced at the current nesting depth.
-    bytes32 private transient _activeFlashLoan;
-
     /// @inheritdoc IFlashLoanCapability
-    function flashLoan(
-        Provider providerType,
-        address provider,
-        address token,
-        uint256 amount,
-        IRouter.Call[] calldata calls
-    ) external {
-        _initiate(providerType, provider, token, amount, abi.encode(calls));
-
-        // Anything the calls produced beyond the repayment belongs to whoever asked for the loan.
-        // Without this it would sit here for the next caller to take.
-        uint256 surplus = IERC20(token).balanceOf(address(this));
-        if (surplus > 0) {
-            IERC20(token).safeTransfer(msg.sender, surplus);
-        }
-    }
-
-    /// @dev Commits the request hash, then hands off to the provider.
-    function _initiate(Provider providerType, address provider, address token, uint256 amount, bytes memory data)
-        private
-    {
-        bytes32 enclosing = _activeFlashLoan;
-        _activeFlashLoan = keccak256(abi.encode(providerType, provider, token, amount, data));
+    function flashLoan(bytes calldata data) external {
+        (Provider providerType, address provider, address token, uint256 amount, bytes memory calls) =
+            abi.decode(data, (Provider, address, address, uint256, bytes));
 
         if (providerType == Provider.Balancer) {
             address[] memory tokens = new address[](1);
             uint256[] memory amounts = new uint256[](1);
             tokens[0] = token;
             amounts[0] = amount;
-            IFlashLoanBalancerVault(provider).flashLoan(address(this), tokens, amounts, data);
+            IFlashLoanBalancerVault(provider).flashLoan(address(this), tokens, amounts, calls);
         } else if (providerType == Provider.Aave) {
-            IFlashLoanAavePool(provider).flashLoanSimple(address(this), token, amount, data, 0);
+            IFlashLoanAavePool(provider).flashLoanSimple(address(this), token, amount, calls, 0);
         } else {
-            // Morpho's callback carries only the amount, so the token rides in the payload.
-            IFlashLoanMorpho(provider).flashLoan(token, amount, abi.encode(token, data));
+            IFlashLoanMorpho(provider).flashLoan(token, amount, calls);
         }
 
-        _activeFlashLoan = enclosing;
-    }
-
-    /// @dev `provider` is the callback's `msg.sender`; matching the transient hash proves the caller
-    ///      is the exact lender we borrowed from.
-    function _serviceFlashLoan(
-        Provider providerType,
-        address provider,
-        address token,
-        uint256 amount,
-        uint256 fee,
-        bytes memory data
-    ) private {
-        if (_activeFlashLoan != keccak256(abi.encode(providerType, provider, token, amount, data))) {
-            revert UnexpectedFlashLoan();
+        // Load-bearing: this is the whole reason an unauthenticated contract that makes arbitrary
+        // calls is safe. Whatever the calls produced goes back to whoever asked, leaving nothing
+        // here for the next caller.
+        uint256 surplus = IERC20(token).balanceOf(address(this));
+        if (surplus > 0) {
+            IERC20(token).safeTransfer(msg.sender, surplus);
         }
 
-        IRouter.Call[] memory calls = abi.decode(data, (IRouter.Call[]));
-        uint256 length = calls.length;
-        for (uint256 i; i < length; ++i) {
-            calls[i].target.functionCall(calls[i].data);
-        }
-
-        // Checked here rather than left to the provider so a shortfall names itself instead of
-        // surfacing as an opaque transfer revert from inside the lender.
-        uint256 owed = amount + fee;
-        uint256 held = IERC20(token).balanceOf(address(this));
-        if (held < owed) {
-            revert FlashLoanNotRepaid(token, held, owed);
-        }
-
-        emit FlashLoan(providerType, provider, token, amount, fee);
+        emit FlashLoan(providerType, provider, token, amount);
     }
 
     /// @inheritdoc IFlashLoanBalancerRecipient
-    function receiveFlashLoan(
-        address[] calldata tokens,
-        uint256[] calldata amounts,
-        uint256[] calldata feeAmounts,
-        bytes calldata userData
-    ) external {
-        _serviceFlashLoan(Provider.Balancer, msg.sender, tokens[0], amounts[0], feeAmounts[0], userData);
-        // Balancer is repaid by transfer.
-        IERC20(tokens[0]).safeTransfer(msg.sender, amounts[0] + feeAmounts[0]);
+    function receiveFlashLoan(address[] calldata, uint256[] calldata, uint256[] calldata, bytes calldata userData)
+        external
+    {
+        _run(userData);
     }
 
     /// @inheritdoc IFlashLoanAaveReceiver
-    function executeOperation(address asset, uint256 amount, uint256 premium, address, bytes calldata params)
-        external
-        returns (bool)
-    {
-        _serviceFlashLoan(Provider.Aave, msg.sender, asset, amount, premium, params);
-        // Aave pulls principal + premium.
-        IERC20(asset).forceApprove(msg.sender, amount + premium);
+    function executeOperation(address, uint256, uint256, address, bytes calldata params) external returns (bool) {
+        _run(params);
+
         return true;
     }
 
     /// @inheritdoc IFlashLoanMorphoCallback
-    function onMorphoFlashLoan(uint256 assets, bytes calldata data) external {
-        (address token, bytes memory calls) = abi.decode(data, (address, bytes));
-        // Morpho charges no fee.
-        _serviceFlashLoan(Provider.Morpho, msg.sender, token, assets, 0, calls);
-        // Morpho pulls the principal.
-        IERC20(token).forceApprove(msg.sender, assets);
+    function onMorphoFlashLoan(uint256, bytes calldata data) external {
+        _run(data);
+    }
+
+    /// @dev The whole of every callback: decode the calls, run them. Repayment is one of them.
+    function _run(bytes calldata data) private {
+        IRouter.Call[] memory calls = abi.decode(data, (IRouter.Call[]));
+
+        uint256 length = calls.length;
+        for (uint256 i; i < length; ++i) {
+            calls[i].target.functionCall(calls[i].data);
+        }
     }
 }

@@ -13,34 +13,15 @@ interface IFlashLoanCapability {
         Morpho
     }
 
-    /// @notice Emitted once the borrowed funds have been used and the repayment is in place.
-    event FlashLoan(
-        Provider indexed providerType, address indexed provider, address token, uint256 amount, uint256 fee
-    );
+    /// @notice Emitted once a request has run and its surplus has been returned.
+    event FlashLoan(Provider indexed providerType, address indexed provider, address token, uint256 amount);
 
-    /// @notice Thrown when a callback does not match the in-flight request: a stray callback, an
-    ///         impostor lender, or the wrong provider type.
-    error UnexpectedFlashLoan();
-
-    /// @notice Thrown when the borrowed funds plus whatever the calls produced cannot cover
-    ///         principal and fee.
-    error FlashLoanNotRepaid(address token, uint256 held, uint256 owed);
-
-    /// @notice Borrows `amount` of `token` from `provider` and runs `calls` with it.
-    /// @dev Permissionless: this contract holds no allowances, so there is nothing to gate. Any
-    ///      surplus left after repayment is returned to the caller.
-    /// @param providerType Which interface `provider` speaks.
-    /// @param provider The lender. Chosen by the caller, never trusted for anything but repayment.
-    /// @param token The asset to borrow.
-    /// @param amount Principal to borrow.
-    /// @param calls Calls run while the borrowed funds are held here; one may nest another loan.
-    function flashLoan(
-        Provider providerType,
-        address provider,
-        address token,
-        uint256 amount,
-        IRouter.Call[] calldata calls
-    ) external;
+    /// @notice Borrows and runs the calls carried in `data`.
+    /// @dev Permissionless, and safe only because this contract holds nothing: no allowances, and
+    ///      its balance is swept to the caller before returning. Repaying the lender is one of the
+    ///      encoded calls — this contract does not model fees or repayment.
+    /// @param data `abi.encode(Provider, provider, token, amount, abi.encode(IRouter.Call[]))`.
+    function flashLoan(bytes calldata data) external;
 }
 
 interface IFlashLoanBalancerVault {

@@ -42,96 +42,88 @@ contract FlashLoanCapabilityTest is Test {
         token.mint(address(sink), 1_000_000e18);
     }
 
-    /* HAPPY PATH */
+    /* THE CALLS DO THE WORK, INCLUDING REPAYMENT */
 
-    function test_FlashLoan_Morpho_RunsCallsAndRepays() public {
+    function test_FlashLoan_Morpho_RunsCallsAndTheCallsRepay() public {
         vm.prank(user);
-        capability.flashLoan(
-            IFlashLoanCapability.Provider.Morpho, address(morpho), address(token), 100e18, _useAndReturn(100e18, 100e18)
-        );
+        capability.flashLoan(_request(IFlashLoanCapability.Provider.Morpho, address(morpho), 100e18, 100e18, 100e18));
 
-        assertEq(sink.seen(), 1, "the borrowed-liquidity calls ran");
+        assertEq(sink.calls(), 1, "borrowed-liquidity calls ran");
+        assertEq(token.balanceOf(address(morpho)), 1_000_000e18, "lender made whole");
         assertEq(token.balanceOf(address(capability)), 0, "nothing stranded");
-        assertEq(token.balanceOf(address(morpho)), 1_000_000e18, "principal repaid");
     }
 
-    function test_FlashLoan_Aave_RepaysPrincipalPlusPremium() public {
-        aave.setPremiumBps(9); // 0.09%, Aave's standard
+    function test_FlashLoan_Aave_CallsCoverThePremium() public {
+        aave.setPremiumBps(9);
 
         vm.prank(user);
-        capability.flashLoan(
-            IFlashLoanCapability.Provider.Aave, address(aave), address(token), 100e18, _useAndReturn(100e18, 100.09e18)
-        );
+        // The caller composes repayment, so it is the caller who accounts for the premium.
+        capability.flashLoan(_request(IFlashLoanCapability.Provider.Aave, address(aave), 100e18, 100e18, 100.09e18));
 
-        assertEq(token.balanceOf(address(aave)), 1_000_000e18 + 0.09e18, "premium paid");
+        assertEq(token.balanceOf(address(aave)), 1_000_000e18 + 0.09e18, "premium paid by the calls");
         assertEq(token.balanceOf(address(capability)), 0, "nothing stranded");
     }
 
     function test_FlashLoan_SweepsSurplusToCaller() public {
-        // The calls return more than was borrowed; the excess is the caller's.
         vm.prank(user);
-        capability.flashLoan(
-            IFlashLoanCapability.Provider.Morpho, address(morpho), address(token), 100e18, _useAndReturn(100e18, 130e18)
-        );
+        capability.flashLoan(_request(IFlashLoanCapability.Provider.Morpho, address(morpho), 100e18, 100e18, 130e18));
 
         assertEq(token.balanceOf(user), 30e18, "surplus returned to the caller");
         assertEq(token.balanceOf(address(capability)), 0, "nothing left for the next caller");
     }
 
-    function test_FlashLoan_RevertsWhenCallsCannotRepay() public {
+    /// @dev Repayment is not this contract's concern, so a shortfall surfaces from the lender.
+    function test_FlashLoan_ShortfallRevertsInTheLender() public {
         vm.prank(user);
-        vm.expectRevert(
-            abi.encodeWithSelector(IFlashLoanCapability.FlashLoanNotRepaid.selector, address(token), 60e18, 100e18)
-        );
-        capability.flashLoan(
-            IFlashLoanCapability.Provider.Morpho, address(morpho), address(token), 100e18, _useAndReturn(100e18, 60e18)
-        );
+        vm.expectRevert();
+        capability.flashLoan(_request(IFlashLoanCapability.Provider.Morpho, address(morpho), 100e18, 100e18, 60e18));
     }
-
-    /* CALLBACK AUTHENTICATION */
-
-    function test_Callback_RevertsWithoutAnInFlightLoan() public {
-        vm.prank(attacker);
-        vm.expectRevert(IFlashLoanCapability.UnexpectedFlashLoan.selector);
-        IFlashLoanMorphoCallback(address(capability))
-            .onMorphoFlashLoan(100e18, abi.encode(address(token), abi.encode(new IRouter.Call[](0))));
-    }
-
-    /// @dev A real loan is in flight, but a different address tries to drive its callback. The hash
-    ///      binds the provider, so only the lender we actually borrowed from can.
-    function test_Callback_RevertsForAnImpostorLender() public {
-        MockImpostor impostor = new MockImpostor(capability, token);
-        token.mint(address(impostor), 1000e18);
-
-        vm.prank(attacker);
-        vm.expectRevert(IFlashLoanCapability.UnexpectedFlashLoan.selector);
-        impostor.attack(100e18);
-    }
-
-    /* NESTING */
 
     function test_FlashLoan_LoansMayNest() public {
-        IRouter.Call[] memory inner = _useAndReturn(50e18, 50e18);
-        IRouter.Call[] memory outer = new IRouter.Call[](2);
+        IRouter.Call[] memory inner = _useAndRepay(50e18, 50e18, address(aave));
+        IRouter.Call[] memory outer = new IRouter.Call[](4);
         outer[0] = IRouter.Call({
             target: address(capability),
             data: abi.encodeCall(
                 IFlashLoanCapability.flashLoan,
-                (IFlashLoanCapability.Provider.Aave, address(aave), address(token), 50e18, inner)
+                (abi.encode(
+                        IFlashLoanCapability.Provider.Aave, address(aave), address(token), 50e18, abi.encode(inner)
+                    ))
             )
         });
-        outer[1] = IRouter.Call({target: address(sink), data: abi.encodeCall(MockSink.giveBack, (100e18))});
+        outer[1] =
+            IRouter.Call({target: address(token), data: abi.encodeCall(IERC20.transfer, (address(sink), 100e18))});
+        outer[2] = IRouter.Call({target: address(sink), data: abi.encodeCall(MockSink.giveBack, (100e18))});
+        // The outer lender pulls too, so the outer list carries its own repayment leg.
+        outer[3] = IRouter.Call({
+            target: address(token), data: abi.encodeCall(IERC20.approve, (address(morpho), type(uint256).max))
+        });
 
         vm.prank(user);
-        capability.flashLoan(IFlashLoanCapability.Provider.Morpho, address(morpho), address(token), 100e18, outer);
+        capability.flashLoan(
+            abi.encode(IFlashLoanCapability.Provider.Morpho, address(morpho), address(token), 100e18, abi.encode(outer))
+        );
 
         assertEq(token.balanceOf(address(capability)), 0, "both loans settled, nothing stranded");
     }
 
-    /* THE RELAYER IS OUT OF REACH FROM HERE */
+    /* WHAT THE MISSING AUTHENTICATION DOES AND DOES NOT COST */
 
-    /// @dev The capability makes arbitrary calls too, so it is a second route to the relayer. The
-    ///      relayer's own caller check is what closes it — it answers only to its router.
+    /// @dev The callbacks are open. This is only acceptable because the contract is empty at rest —
+    ///      a direct callback can run calls, but there is nothing here for them to take.
+    function test_Callback_IsOpenButFindsNothingToTake() public {
+        IRouter.Call[] memory calls = new IRouter.Call[](1);
+        calls[0] = IRouter.Call({target: address(token), data: abi.encodeCall(IERC20.transfer, (attacker, 1e18))});
+
+        vm.prank(attacker);
+        vm.expectRevert(); // no balance to transfer
+        IFlashLoanMorphoCallback(address(capability)).onMorphoFlashLoan(0, abi.encode(calls));
+
+        assertEq(token.balanceOf(attacker), 0, "nothing extracted");
+    }
+
+    /// @dev The relayer answers only to its router, so this second arbitrary-call surface is not a
+    ///      route to anyone's allowances.
     function test_FlashLoan_CannotDrainTheRelayer() public {
         token.mint(victim, 500e18);
         vm.prank(victim);
@@ -144,21 +136,37 @@ contract FlashLoanCapabilityTest is Test {
 
         vm.prank(attacker);
         vm.expectRevert(IRelayer.NotRouter.selector);
-        capability.flashLoan(IFlashLoanCapability.Provider.Morpho, address(morpho), address(token), 0, calls);
+        IFlashLoanMorphoCallback(address(capability)).onMorphoFlashLoan(0, abi.encode(calls));
 
         assertEq(token.balanceOf(victim), 500e18, "victim untouched");
     }
 
     /* HELPERS */
 
-    /// @dev Spends the whole borrowed amount, then hands back `returned`. Consuming the principal
-    ///      is what makes the repayment check meaningful — otherwise the borrowed funds alone would
-    ///      always cover it and a shortfall could never be observed.
-    function _useAndReturn(uint256 borrowed, uint256 returned) internal view returns (IRouter.Call[] memory calls) {
-        calls = new IRouter.Call[](2);
-        calls[0] =
-            IRouter.Call({target: address(token), data: abi.encodeCall(IERC20.transfer, (address(sink), borrowed))});
+    function _request(
+        IFlashLoanCapability.Provider providerType,
+        address provider,
+        uint256 amount,
+        uint256 spend,
+        uint256 returned
+    ) internal view returns (bytes memory) {
+        return abi.encode(
+            providerType, provider, address(token), amount, abi.encode(_useAndRepay(spend, returned, provider))
+        );
+    }
+
+    /// @dev Spend the principal, take `returned` back, then repay the lender the way it expects.
+    function _useAndRepay(uint256 spend, uint256 returned, address provider)
+        internal
+        view
+        returns (IRouter.Call[] memory calls)
+    {
+        calls = new IRouter.Call[](3);
+        calls[0] = IRouter.Call({target: address(token), data: abi.encodeCall(IERC20.transfer, (address(sink), spend))});
         calls[1] = IRouter.Call({target: address(sink), data: abi.encodeCall(MockSink.giveBack, (returned))});
+        // Both mock lenders pull, so the repayment leg is an approval.
+        calls[2] =
+            IRouter.Call({target: address(token), data: abi.encodeCall(IERC20.approve, (provider, type(uint256).max))});
     }
 }
 
@@ -170,19 +178,18 @@ contract MockERC20 is ERC20 {
     }
 }
 
-/// @dev Stands in for whatever the borrowed funds are used on.
 contract MockSink {
     using SafeERC20 for IERC20;
 
     IERC20 internal immutable TOKEN;
-    uint256 public seen;
+    uint256 public calls;
 
     constructor(MockERC20 token_) {
         TOKEN = IERC20(address(token_));
     }
 
     function giveBack(uint256 returned) external {
-        ++seen;
+        ++calls;
         TOKEN.safeTransfer(msg.sender, returned);
     }
 }
@@ -211,24 +218,5 @@ contract MockAave {
         IERC20(asset).safeTransfer(receiver, amount);
         FlashLoanCapability(receiver).executeOperation(asset, amount, premium, msg.sender, params);
         IERC20(asset).safeTransferFrom(receiver, address(this), amount + premium);
-    }
-}
-
-/// @dev Borrows nothing but tries to drive the callback of a loan someone else has in flight.
-contract MockImpostor {
-    using SafeERC20 for IERC20;
-
-    FlashLoanCapability internal immutable CAPABILITY;
-    IERC20 internal immutable TOKEN;
-
-    constructor(FlashLoanCapability capability_, MockERC20 token_) {
-        CAPABILITY = capability_;
-        TOKEN = IERC20(address(token_));
-    }
-
-    function attack(uint256 amount) external {
-        // No loan of ours is in flight, so the transient hash cannot match.
-        IFlashLoanMorphoCallback(address(CAPABILITY))
-            .onMorphoFlashLoan(amount, abi.encode(address(TOKEN), abi.encode(new IRouter.Call[](0))));
     }
 }
