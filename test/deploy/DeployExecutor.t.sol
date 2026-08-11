@@ -6,6 +6,7 @@ import {Executor} from "../../src/Executor.sol";
 import {LiquidLaneLifiExecutor} from "../../src/lifi/LiquidLaneLifiExecutor.sol";
 import {DeployExecutorBaseScript} from "../../script/deploy/base/DeployExecutorBase.s.sol";
 import {DeployLifiExecutorBaseScript} from "../../script/deploy/base/DeployLifiExecutorBase.s.sol";
+import {DeployLifiExecutorScript} from "../../script/DeployLifiExecutor.s.sol";
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {Test} from "forge-std/Test.sol";
@@ -59,6 +60,14 @@ contract DeployExecutorTest is Test {
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         LiquidLaneLifiExecutor(data.implementation).initialize(admin, callers);
     }
+
+    function testDeployLifiExecutorUsesProductionSettlers() public {
+        DeployLifiExecutorScriptHarness harness = new DeployLifiExecutorScriptHarness();
+        DeployLifiExecutorBaseScript.DeploymentData memory data = harness.run();
+
+        assertEq(data.executor.INPUT_SETTLER(), 0x00fC00edbe7C003b006f870068c548940000223e);
+        assertEq(data.executor.OUTPUT_SETTLER(), 0x75220B7600c300005038432a0000f308e0000068);
+    }
 }
 
 contract DeployExecutorBaseHarness is DeployExecutorBaseScript {
@@ -68,6 +77,12 @@ contract DeployExecutorBaseHarness is DeployExecutorBaseScript {
 }
 
 contract DeployLifiExecutorBaseHarness is DeployLifiExecutorBaseScript {
+    function _startBroadcast() internal override {}
+
+    function _stopBroadcast() internal override {}
+}
+
+contract DeployLifiExecutorScriptHarness is DeployLifiExecutorScript {
     function _startBroadcast() internal override {}
 
     function _stopBroadcast() internal override {}
