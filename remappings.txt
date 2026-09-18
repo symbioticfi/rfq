@@ -3,3 +3,4 @@ forge-std/=lib/forge-std/src/
 @openzeppelin/contracts-upgradeable/=lib/core/lib/openzeppelin-contracts-upgradeable/contracts/
 solady/=lib/core/lib/solady/src/
 @symbioticfi/core/=lib/core/
+permit2/=lib/permit2/

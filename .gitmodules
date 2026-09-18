@@ -8,3 +8,6 @@
 	path = lib/core
 	url = https://github.com/symbioticfi/core
 	branch = delegator-simplify
+[submodule "lib/permit2"]
+	path = lib/permit2
+	url = https://github.com/Uniswap/permit2
