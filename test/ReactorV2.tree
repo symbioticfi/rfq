@@ -1,0 +1,30 @@
+ReactorV2.fill
+├── caller is not the signed filler
+│   └── revert before funding
+├── destination is outside both factories
+│   └── revert before funding
+├── protocol signature or signed destination/outputs were changed
+│   └── revert before funding
+├── final outputs do not preserve requested token, recipient or minimum
+│   └── revert before funding
+├── Permit2 witness, spender, chain, deadline or nonce is invalid
+│   └── revert without consuming funds or a fresh nonce
+└── all authorizations are valid
+    ├── destination belongs to either factory
+    │   └── send the entire input to that one address
+    ├── callback executes
+    │   ├── already-funded destination is usable
+    │   ├── nested fill reverts
+    │   └── callback failure rolls back input and nonce
+    └── outputs settle
+        ├── exact or improved ERC20 obligations pay every recipient
+        ├── native obligations pay recipients and refund surplus
+        ├── native recipients and refund receivers cannot reenter settlement
+        ├── later payment failure rolls back earlier payments, input and nonce
+        └── consumed or directly cancelled Permit2 nonce cannot fill again
+
+ReactorV2 deployment
+├── any dependency has no code
+│   └── revert deployment
+└── script supplies deployed Permit2 and both factories
+    └── deployed ReactorV2 fills both adapter and connector routes
