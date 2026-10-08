@@ -191,9 +191,7 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
     /// @dev Returns whether `caller` can invoke fill entrypoints.
     function _isCaller(address caller) internal view returns (bool) {
         for (uint256 i; i < callers.length; ++i) {
-            if (callers[i] == caller) {
-                return true;
-            }
+            if (callers[i] == caller) return true;
         }
         return false;
     }
