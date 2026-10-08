@@ -5,6 +5,9 @@ pragma solidity 0.8.28;
 import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {ILiquidLaneUniswapXExecutor} from "./interfaces/ILiquidLaneUniswapXExecutor.sol";
 import {IUniswapXReactor, UniswapXResolvedOrder, UniswapXSignedOrder} from "./interfaces/IUniswapXReactor.sol";
+import {IRecipeRoute, LIQUID_LANE_CONNECTOR_VERSION} from "src/interfaces/IRecipeRoute.sol";
+import {IMigratableEntity} from "@symbioticfi/core/src/interfaces/common/IMigratableEntity.sol";
+import {RecipeExecutorLib} from "src/libraries/RecipeExecutorLib.sol";
 
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
@@ -37,32 +40,48 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
     }
 
     function execute(UniswapXSignedOrder calldata order, FillCall calldata fillCall) public onlyCaller {
-        IUniswapXReactor(REACTOR).executeWithCallback(order, abi.encode(fillCall));
+        IUniswapXReactor(REACTOR).executeWithCallback(order, abi.encode(fillCall, new IRecipeRoute.RecipeRoute[](0)));
+    }
+
+    /// @notice Executes an order with committed RecipeExecutor routes in addition to LiquidLane legs.
+    function execute(
+        UniswapXSignedOrder calldata order,
+        FillCall calldata fillCall,
+        IRecipeRoute.RecipeRoute[] calldata recipeRoutes
+    ) public onlyCaller {
+        IUniswapXReactor(REACTOR).executeWithCallback(order, abi.encode(fillCall, recipeRoutes));
     }
 
     function reactorCallback(UniswapXResolvedOrder[] memory resolvedOrders, bytes memory callbackData) external {
         if (msg.sender != REACTOR) revert NotReactor();
 
-        FillCall memory fillCall = abi.decode(callbackData, (FillCall));
+        (FillCall memory fillCall, IRecipeRoute.RecipeRoute[] memory recipeRoutes) =
+            abi.decode(callbackData, (FillCall, IRecipeRoute.RecipeRoute[]));
         address tokenIn = resolvedOrders[0].input.token;
 
         uint256 routesLength = fillCall.routes.length;
         for (uint256 i; i < routesLength; ++i) {
             FillRoute memory route = fillCall.routes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(
                     ILiquidLaneAdapter.Swap({
-                    recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
-                })
+                        recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
+                    })
                 );
         }
         uint256 discountRoutesLength = fillCall.discountRoutes.length;
         for (uint256 i; i < discountRoutesLength; ++i) {
             DiscountRoute memory route = fillCall.discountRoutes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(route.discountSwap, route.protocolSignature, address(this), route.amountIn);
+        }
+
+        for (uint256 i; i < recipeRoutes.length; ++i) {
+            RecipeExecutorLib.execute(tokenIn, recipeRoutes[i]);
         }
 
         uint256 outputsLength = resolvedOrders[0].outputs.length;

@@ -3,6 +3,7 @@
 pragma solidity ^0.8.0;
 
 import {IReactor} from "./IReactor.sol";
+import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
 
 /**
  * @title IExecutor
@@ -35,6 +36,14 @@ interface IExecutor {
         bytes data;
     }
 
+    /**
+     * @notice Recipe input routes followed by optional generic post-swap calls.
+     */
+    struct RecipeFill {
+        IRecipeRoute.RecipeRoute[] routes;
+        Call[] postCalls;
+    }
+
     /* EVENTS */
 
     /**
@@ -44,6 +53,20 @@ interface IExecutor {
     event SetCallers(address[] newCallers);
 
     /* FUNCTIONS */
+
+    /**
+     * @notice Fills an order using direct, discount and committed recipe input legs.
+     * @dev The Reactor funds registered adapters/connectors using the existing input legs.
+     * Version 2 connector actions run through recipes after direct version 1 swaps and before postCalls.
+     * Direct, discount and recipe connector input amounts together must equal the signed input amount.
+     */
+    function fill(
+        IReactor.Order calldata order,
+        bytes calldata protocolSignature,
+        IReactor.SwapInput[] calldata swapInputs,
+        IReactor.DiscountSwapInput[] calldata discountSwapInputs,
+        RecipeFill calldata recipeFill
+    ) external;
 
     /**
      * @notice Initializes the proxy with its owner and allowed caller list.

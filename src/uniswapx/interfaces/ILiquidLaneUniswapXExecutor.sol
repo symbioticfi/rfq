@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 
 import {ILiquidLaneAdapter} from "../../interfaces/ILiquidLaneAdapter.sol";
 import {IUniswapXReactorCallback, UniswapXSignedOrder} from "./IUniswapXReactor.sol";
+import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
 
 interface ILiquidLaneUniswapXExecutor is IUniswapXReactorCallback {
     error NotCaller();
@@ -32,5 +33,13 @@ interface ILiquidLaneUniswapXExecutor is IUniswapXReactorCallback {
     function initialize(address owner, address[] calldata initCallers) external;
     function callers(uint256 index) external view returns (address caller);
     function execute(UniswapXSignedOrder calldata order, FillCall calldata fillCall) external;
+    /**
+     * @notice Sources output through LiquidLane legs followed by committed RecipeExecutor routes.
+     */
+    function execute(
+        UniswapXSignedOrder calldata order,
+        FillCall calldata fillCall,
+        IRecipeRoute.RecipeRoute[] calldata recipeRoutes
+    ) external;
     function setCallers(address[] calldata newCallers) external;
 }

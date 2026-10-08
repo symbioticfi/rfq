@@ -7,6 +7,8 @@ import {IInputSettler} from "./IInputSettler.sol";
 import {MandateOutput} from "./IOutputSettler.sol";
 import {ILiquidLaneAdapter} from "../../interfaces/ILiquidLaneAdapter.sol";
 
+import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
+
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 /**
@@ -77,6 +79,17 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
         IInputSettler.StandardOrder calldata order,
         FillRoute[] calldata routes,
         DiscountRoute[] calldata discountRoutes
+    ) external;
+    /**
+     * @notice Finalises using direct, discount and committed RecipeExecutor routes.
+     * @dev Recipe legs fund version 2 connectors bound to the recipe account. Route amounts
+     * should use the input released after settler fees. The output settler resolves and enforces output.
+     */
+    function finaliseWithCurrentTimestamp(
+        IInputSettler.StandardOrder calldata order,
+        FillRoute[] calldata routes,
+        DiscountRoute[] calldata discountRoutes,
+        IRecipeRoute.RecipeRoute[] calldata recipeRoutes
     ) external;
     function isCaller(address caller) external view returns (bool allowed);
     function lifiRegistrationDigest(bytes32 messageHash) external view returns (bytes32 digest);
