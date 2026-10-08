@@ -1,0 +1,39 @@
+Recipe input routes (RFQ fill / LI.FI finalise / UniswapX execute)
+├── when the initiating caller is unauthorized
+│   └── it should revert before input is spent
+├── when the caller list is empty
+│   └── it should reject execution without spending input
+├── when the callback sender is unauthorized
+│   └── it should preserve the existing Reactor/settler authentication
+└── when the caller and callback are authorized
+    ├── when a native RFQ input total differs from the signed amount
+    │   └── it should revert before transfers
+    ├── when recipe account/version metadata is absent or reverts
+    │   └── it should forward caller-selected funding and the exact recipe payload without metadata validation
+    ├── when the caller selects a funding recipient unrelated to the recipe
+    │   └── it should let downstream execution and settlement determine whether the fill succeeds
+    ├── when the recipe caller, commitment or managed action is invalid
+    │   └── it should revert and roll back input, recipe effects and settlement state
+    ├── when a route overdraws available LI.FI/UniswapX input
+    │   └── it should revert and roll back the fill
+    └── when recipe execution succeeds
+        ├── with the initiating caller at the end of the caller list
+        │   └── it should authorize the fill and settle output
+        ├── with varying input amounts
+        │   └── it should fund the connector, execute its account-only swap, and settle output
+        ├── with a zero recipe amount after an existing input leg funds the connector
+        │   └── LI.FI/UniswapX should transfer zero and execute the recipe; native RFQ funding stays in Reactor
+        ├── with mixed direct, discount and recipe routes
+        │   └── it should execute each leg and settle their combined output
+        ├── with multiple recipes
+        │   └── it should fund each connector separately and return inventory to its bound account
+        ├── with the upstream interpreter
+        │   └── it should forward queries, steps, numeric inputs and proof-bearing runtime
+        ├── when required output is missing
+        │   └── it should revert and roll back input and nonce/claim state
+        ├── with native output
+        │   └── it should deliver through the existing settlement path
+        ├── with post-calls in native RFQ
+        │   └── it should run them after recipes and roll back on failure
+        └── with LI.FI fees or retained LI.FI/UniswapX balances
+            └── it should preserve the existing balance and settlement behavior

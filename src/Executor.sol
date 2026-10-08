@@ -5,12 +5,16 @@ pragma solidity 0.8.28;
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {ILiquidLaneAdapter} from "./interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
+import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
+import {IRecipeRoute, LIQUID_LANE_CONNECTOR_VERSION} from "src/interfaces/IRecipeRoute.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
+import {IMigratableEntity} from "@symbioticfi/core/src/interfaces/common/IMigratableEntity.sol";
 
 /// @title Executor
 /// @notice Caller-gated executor that forwards fills into Reactor and handles execution callbacks.
@@ -62,6 +66,46 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
+        IReactor.SwapInput[] calldata swapInputs,
+        IReactor.DiscountSwapInput[] calldata discountSwapInputs,
+        RecipeFill calldata recipeFill
+    ) public onlyCaller {
+        IReactor.SwapInput[] memory inputs = new IReactor.SwapInput[](swapInputs.length + recipeFill.routes.length);
+        for (uint256 i; i < swapInputs.length; ++i) {
+            inputs[i] = swapInputs[i];
+        }
+        for (uint256 i; i < recipeFill.routes.length; ++i) {
+            inputs[swapInputs.length + i] = IReactor.SwapInput({
+                adapter: recipeFill.routes[i].connector,
+                swap: ILiquidLaneAdapter.Swap({
+                    recipient: address(this),
+                    tokenIn: order.request.tokenIn,
+                    amountIn: recipeFill.routes[i].amountIn,
+                    amountOut: 0
+                })
+            });
+        }
+
+        Call[] memory calls = new Call[](recipeFill.routes.length + recipeFill.postCalls.length);
+        for (uint256 i; i < recipeFill.routes.length; ++i) {
+            IRecipeRoute.RecipeRoute calldata route = recipeFill.routes[i];
+            calls[i] = Call({
+                target: route.executor,
+                value: 0,
+                data: abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
+            });
+        }
+        for (uint256 i; i < recipeFill.postCalls.length; ++i) {
+            calls[recipeFill.routes.length + i] = recipeFill.postCalls[i];
+        }
+
+        IReactor(REACTOR).fill(order, protocolSignature, inputs, discountSwapInputs, abi.encode(calls));
+    }
+
+    /// @inheritdoc IExecutor
+    function fill(
+        IReactor.Order calldata order,
+        bytes calldata protocolSignature,
         IReactor.SwapInput calldata swapInput,
         bytes calldata executorData
     ) public onlyCaller {
@@ -101,9 +145,11 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         }
 
         for (uint256 i; i < swapInputs.length; ++i) {
+            if (IMigratableEntity(swapInputs[i].adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
+            if (IMigratableEntity(discountSwapInputs[i].adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(discountSwapInputs[i].adapter)
                 .swap(
                     discountSwapInputs[i].discountSwap,
@@ -145,9 +191,7 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
     /// @dev Returns whether `caller` can invoke fill entrypoints.
     function _isCaller(address caller) internal view returns (bool) {
         for (uint256 i; i < callers.length; ++i) {
-            if (callers[i] == caller) {
-                return true;
-            }
+            if (callers[i] == caller) return true;
         }
         return false;
     }

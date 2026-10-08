@@ -2,18 +2,22 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
-import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {IInputSettler} from "./interfaces/IInputSettler.sol";
+import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {ILiquidLaneLifiExecutor} from "./interfaces/ILiquidLaneLifiExecutor.sol";
 import {IOutputSettler} from "./interfaces/IOutputSettler.sol";
+import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
+import {IRecipeRoute, LIQUID_LANE_CONNECTOR_VERSION} from "src/interfaces/IRecipeRoute.sol";
 
+import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+
+import {IMigratableEntity} from "@symbioticfi/core/src/interfaces/common/IMigratableEntity.sol";
 
 /// @title LiquidLaneLifiExecutor
 /// @notice LI.FI same-chain solver that redeems released inputs and fills the order output atomically.
@@ -76,24 +80,17 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         FillRoute[] calldata routes,
         DiscountRoute[] calldata discountRoutes
     ) external onlyCaller {
-        bytes32 executorId = bytes32(uint256(uint160(address(this))));
-        IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
-        solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
-        IInputSettler(INPUT_SETTLER)
-            .finalise(
-                order,
-                solveParams,
-                executorId,
-                abi.encode(
-                    FillCall({
-                    orderId: IInputSettler(INPUT_SETTLER).orderIdentifier(order),
-                    output: order.outputs[0],
-                    fillDeadline: order.fillDeadline,
-                    routes: routes,
-                    discountRoutes: discountRoutes
-                })
-                )
-            );
+        _finalise(order, routes, discountRoutes, new IRecipeRoute.RecipeRoute[](0));
+    }
+
+    /// @inheritdoc ILiquidLaneLifiExecutor
+    function finaliseWithCurrentTimestamp(
+        IInputSettler.StandardOrder calldata order,
+        FillRoute[] calldata routes,
+        DiscountRoute[] calldata discountRoutes,
+        IRecipeRoute.RecipeRoute[] calldata recipeRoutes
+    ) external onlyCaller {
+        _finalise(order, routes, discountRoutes, recipeRoutes);
     }
 
     /* IINPUTCALLBACK */
@@ -102,28 +99,35 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     function orderFinalised(uint256[2][] calldata inputs, bytes calldata executionData) external {
         if (INPUT_SETTLER != msg.sender) revert NotInputSettler();
 
-        FillCall memory fillCall = abi.decode(executionData, (FillCall));
+        (FillCall memory fillCall, IRecipeRoute.RecipeRoute[] memory recipeRoutes) =
+            abi.decode(executionData, (FillCall, IRecipeRoute.RecipeRoute[]));
 
         // Adapters assume their input has already been transferred to them before the swap call.
         // forge-lint: disable-next-line(unsafe-typecast)
         address tokenIn = address(uint160(inputs[0][0]));
-        uint256 routesLength = fillCall.routes.length;
-        for (uint256 i; i < routesLength; ++i) {
+        for (uint256 i; i < fillCall.routes.length; ++i) {
             FillRoute memory route = fillCall.routes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(
                     ILiquidLaneAdapter.Swap({
-                    recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
-                })
+                        recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
+                    })
                 );
         }
-        uint256 discountRoutesLength = fillCall.discountRoutes.length;
-        for (uint256 i; i < discountRoutesLength; ++i) {
+        for (uint256 i; i < fillCall.discountRoutes.length; ++i) {
             DiscountRoute memory route = fillCall.discountRoutes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(route.discountSwap, route.protocolSignature, address(this), route.amountIn);
+        }
+
+        for (uint256 i; i < recipeRoutes.length; ++i) {
+            IRecipeRoute.RecipeRoute memory route = recipeRoutes[i];
+            IERC20(tokenIn).safeTransfer(route.connector, route.amountIn);
+            IRecipeExecutor(route.executor).execute(route.queries, route.steps, route.inputs, route.runtime);
         }
 
         // The output settler resolves the context-dependent amount it is owed and pulls it,
@@ -158,10 +162,8 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     /// @dev The LI.FI registration message is wrapped in this executor's EIP-712 domain and accepted
     /// only if signed by an authorized caller, binding the signature to both the signer and this proxy.
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
-        bytes32 digest = lifiRegistrationDigest(hash);
-        uint256 callersLength = callers.length;
-        for (uint256 i; i < callersLength; ++i) {
-            if (SignatureChecker.isValidSignatureNowCalldata(callers[i], digest, signature)) {
+        for (uint256 i; i < callers.length; ++i) {
+            if (SignatureChecker.isValidSignatureNowCalldata(callers[i], lifiRegistrationDigest(hash), signature)) {
                 return IERC1271.isValidSignature.selector;
             }
         }
@@ -170,10 +172,27 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
 
     /* INTERNAL */
 
+    function _finalise(
+        IInputSettler.StandardOrder calldata order,
+        FillRoute[] calldata routes,
+        DiscountRoute[] calldata discountRoutes,
+        IRecipeRoute.RecipeRoute[] memory recipeRoutes
+    ) internal {
+        FillCall memory fillCall;
+        fillCall.orderId = IInputSettler(INPUT_SETTLER).orderIdentifier(order);
+        fillCall.output = order.outputs[0];
+        fillCall.fillDeadline = order.fillDeadline;
+        fillCall.routes = routes;
+        fillCall.discountRoutes = discountRoutes;
+        bytes32 executorId = bytes32(uint256(uint160(address(this))));
+        IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
+        solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
+        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, abi.encode(fillCall, recipeRoutes));
+    }
+
     /// @dev Returns whether `caller` can invoke the finalise entrypoint.
     function _isCaller(address caller) internal view returns (bool) {
-        uint256 callersLength = callers.length;
-        for (uint256 i; i < callersLength; ++i) {
+        for (uint256 i; i < callers.length; ++i) {
             if (callers[i] == caller) return true;
         }
         return false;

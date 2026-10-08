@@ -7,10 +7,10 @@ import {IOperationCallback} from "./interfaces/IOperationCallback.sol";
 import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams, Position} from "./interfaces/IMorpho.sol";
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 interface IOevLiquidLaneAdapter is ILiquidLaneAdapter {
     function minDiscount(address tokenToRedeem) external view returns (uint256 ppm);
@@ -26,14 +26,22 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
 
     /* ERRORS */
 
-    error InvalidAuth();
-    error NotExecutor();
-    error NotMorpho();
-    error NotOwner();
     error InsufficientLoanProceeds();
+
+    error InvalidAuth();
+
+    error NotExecutor();
+
+    error NotMorpho();
+
+    error NotOwner();
+
     error ProfitBelowMin();
+
     error SwapOutputBelowMin();
+
     error TransferFailed();
+
     error ZeroAddress();
 
     /* CONSTANTS */
@@ -219,8 +227,11 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         ILiquidLaneAdapter(LIQUID_LANE_ADAPTER)
             .swap(
                 ILiquidLaneAdapter.Swap({
-                recipient: address(this), tokenIn: ctx.collateralToken, amountIn: ctx.seizedAssets, amountOut: amountOut
-            })
+                    recipient: address(this),
+                    tokenIn: ctx.collateralToken,
+                    amountIn: ctx.seizedAssets,
+                    amountOut: amountOut
+                })
             );
 
         uint256 gained = IERC20(ctx.loanToken).balanceOf(address(this)) - loanBefore;
