@@ -3,9 +3,13 @@
 pragma solidity 0.8.28;
 
 import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
-import {RecipeExecutorLib} from "src/libraries/RecipeExecutorLib.sol";
 import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
-import {MockRecipeExecutor, MockRecipeAccount, RecipeRouteBuilder} from "test/mocks/MockRecipeExecutor.sol";
+import {
+    MockRecipeExecutor,
+    MockRecipeAccount,
+    MockRecipeOutputExecutor,
+    RecipeRouteBuilder
+} from "test/mocks/MockRecipeExecutor.sol";
 
 import {ILiquidLaneAdapter} from "../../src/interfaces/ILiquidLaneAdapter.sol";
 import {LiquidLaneUniswapXExecutor} from "../../src/uniswapx/LiquidLaneUniswapXExecutor.sol";
@@ -267,23 +271,53 @@ contract LiquidLaneUniswapXExecutorTest is Test {
 
     /* RECIPE ROUTES */
 
-    function testExecuteRecipeRejectsMismatchedAccountBeforeFunding() public {
+    function testExecuteRecipeDefersMismatchedFundingFailureToToken() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        address unfundedConnector = route.connector;
         (IRecipeRoute.RecipeRoute memory other,) = _newRecipe(10 ether, 10 ether);
         route.connector = other.connector;
         vm.prank(caller);
-        vm.expectRevert(RecipeExecutorLib.RecipeExecutorLib__InvalidAccount.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, unfundedConnector, 0, 10 ether)
+        );
         executor.execute(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
         _assertRecipeRollback(recipe);
+        assertEq(inputToken.balanceOf(other.connector), 0);
     }
 
-    function testExecuteRecipeRejectsVersion1ConnectorBeforeFunding() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
-        route.connector = address(adapter);
+    function testExecuteRecipeAcceptsInputRecipientAndRecipeWithoutMetadata() public {
+        (IRecipeRoute.RecipeRoute memory route,) = _newRecipe(10 ether, 10 ether);
+        MockRecipeOutputExecutor target = new MockRecipeOutputExecutor();
+        outputToken.mint(address(target), 10 ether);
+        route.executor = address(target);
+        route.connector = makeAddr("recipeInputRecipient");
+        route.runtime = new bytes[](1);
+        route.runtime[0] = abi.encode(address(outputToken), address(executor), 10 ether);
         vm.prank(caller);
-        vm.expectRevert(RecipeExecutorLib.RecipeExecutorLib__InvalidConnector.selector);
         executor.execute(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
-        _assertRecipeRollback(recipe);
+        assertEq(inputToken.balanceOf(route.connector), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+        assertEq(target.executions(), 1);
+        assertEq(
+            target.lastCallHash(),
+            keccak256(
+                abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
+            )
+        );
+    }
+
+    function testExecuteRecipeDoesNotReadAccountOrVersionMetadata() public {
+        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        address account = recipe.account();
+        vm.mockCallRevert(address(recipe), abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        vm.mockCallRevert(route.connector, abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        vm.mockCallRevert(route.connector, abi.encodeWithSignature("version()"), hex"feed");
+        vm.prank(caller);
+        executor.execute(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        assertEq(inputToken.balanceOf(account), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(recipe.executions(), 1);
     }
 
     function testExecuteWithRealUpstreamRecipeExecutor() public {

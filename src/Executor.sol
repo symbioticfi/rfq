@@ -2,8 +2,6 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
-import {RecipeExecutorLib} from "src/libraries/RecipeExecutorLib.sol";
-
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {ILiquidLaneAdapter} from "./interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
@@ -173,7 +171,6 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
             inputs[i] = swapInputs[i];
         }
         for (uint256 i; i < recipes.length; ++i) {
-            RecipeExecutorLib.validate(recipes[i]);
             inputs[swapInputs.length + i] = IReactor.SwapInput({
                 adapter: recipes[i].connector,
                 swap: ILiquidLaneAdapter.Swap({

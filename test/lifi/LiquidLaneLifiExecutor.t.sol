@@ -3,9 +3,13 @@
 pragma solidity 0.8.28;
 
 import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
-import {RecipeExecutorLib} from "src/libraries/RecipeExecutorLib.sol";
 import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
-import {MockRecipeExecutor, MockRecipeAccount, RecipeRouteBuilder} from "test/mocks/MockRecipeExecutor.sol";
+import {
+    MockRecipeExecutor,
+    MockRecipeAccount,
+    MockRecipeOutputExecutor,
+    RecipeRouteBuilder
+} from "test/mocks/MockRecipeExecutor.sol";
 
 import {ILiquidLaneAdapter} from "../../src/interfaces/ILiquidLaneAdapter.sol";
 import {IInputCallback} from "../../src/lifi/interfaces/IInputCallback.sol";
@@ -521,25 +525,58 @@ contract LiquidLaneLifiExecutorTest is Test {
 
     /* RECIPE ROUTES */
 
-    function testFinaliseRecipeRejectsMismatchedAccountBeforeFunding() public {
+    function testFinaliseRecipeDefersMismatchedFundingFailureToToken() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        address unfundedConnector = route.connector;
         (IRecipeRoute.RecipeRoute memory other,) = _newRecipe(10 ether, 10 ether);
         route.connector = other.connector;
         IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
         bytes32 orderId = _openOrder(order);
-        vm.expectRevert(RecipeExecutorLib.RecipeExecutorLib__InvalidAccount.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, unfundedConnector, 0, 10 ether)
+        );
         executor.finaliseWithCurrentTimestamp(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
         _assertRecipeRollback(orderId, recipe);
+        assertEq(rwa.balanceOf(other.connector), 0);
     }
 
-    function testFinaliseRecipeRejectsVersion1ConnectorBeforeFunding() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
-        route.connector = address(adapter);
+    function testFinaliseRecipeAcceptsInputRecipientAndRecipeWithoutMetadata() public {
+        (IRecipeRoute.RecipeRoute memory route,) = _newRecipe(10 ether, 10 ether);
+        MockRecipeOutputExecutor target = new MockRecipeOutputExecutor();
+        outputToken.mint(address(target), 10 ether);
+        route.executor = address(target);
+        route.connector = makeAddr("recipeInputRecipient");
+        route.runtime = new bytes[](1);
+        route.runtime[0] = abi.encode(address(outputToken), address(executor), 10 ether);
         IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
         bytes32 orderId = _openOrder(order);
-        vm.expectRevert(RecipeExecutorLib.RecipeExecutorLib__InvalidConnector.selector);
         executor.finaliseWithCurrentTimestamp(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
-        _assertRecipeRollback(orderId, recipe);
+        assertEq(rwa.balanceOf(route.connector), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+        assertEq(target.executions(), 1);
+        assertEq(
+            target.lastCallHash(),
+            keccak256(
+                abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
+            )
+        );
+    }
+
+    function testFinaliseRecipeDoesNotReadAccountOrVersionMetadata() public {
+        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        address account = recipe.account();
+        vm.mockCallRevert(address(recipe), abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        vm.mockCallRevert(route.connector, abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        vm.mockCallRevert(route.connector, abi.encodeWithSignature("version()"), hex"feed");
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        executor.finaliseWithCurrentTimestamp(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        assertEq(rwa.balanceOf(account), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+        assertEq(recipe.executions(), 1);
     }
 
     function testFinaliseWithRealUpstreamRecipeExecutor() public {

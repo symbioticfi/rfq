@@ -4,8 +4,12 @@ pragma solidity 0.8.28;
 
 import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
 import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
-import {RecipeExecutorLib} from "src/libraries/RecipeExecutorLib.sol";
-import {MockRecipeExecutor, MockRecipeAccount, RecipeRouteBuilder} from "test/mocks/MockRecipeExecutor.sol";
+import {
+    MockRecipeExecutor,
+    MockRecipeAccount,
+    MockRecipeOutputExecutor,
+    RecipeRouteBuilder
+} from "test/mocks/MockRecipeExecutor.sol";
 
 import {Executor} from "../src/Executor.sol";
 import {Reactor} from "../src/Reactor.sol";
@@ -953,23 +957,38 @@ contract ReactorTest is Test {
         assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 1);
     }
 
-    function testRecipeFillRejectsMismatchedConnectorAccount() public {
+    function testRecipeFillDefersMismatchedFundingFailureToToken() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        address unfundedConnector = route.connector;
         (IRecipeRoute.RecipeRoute memory other,) = _newRecipe(10 ether, 10 ether);
         route.connector = other.connector;
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
-        vm.expectRevert(RecipeExecutorLib.RecipeExecutorLib__InvalidAccount.selector);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, unfundedConnector, 0, 10 ether)
+        );
         _fillRecipes(order, _oneRecipe(route));
         _assertRecipeRollback(order, recipe);
+        assertEq(rwa.balanceOf(other.connector), 0);
     }
 
-    function testRecipeFillRejectsVersion1ConnectorRoute() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
-        route.connector = address(adapter);
-        IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
-        vm.expectRevert(RecipeExecutorLib.RecipeExecutorLib__InvalidConnector.selector);
-        _fillRecipes(order, _oneRecipe(route));
-        _assertRecipeRollback(order, recipe);
+    function testRecipeFillAcceptsRecipeTargetWithoutAccountMetadata() public {
+        (IRecipeRoute.RecipeRoute memory route,) = _newRecipe(10 ether, 10 ether);
+        MockRecipeOutputExecutor target = new MockRecipeOutputExecutor();
+        outputToken.mint(address(target), 10 ether);
+        route.executor = address(target);
+        route.runtime = new bytes[](1);
+        route.runtime[0] = abi.encode(address(outputToken), address(executor), 10 ether);
+        vm.mockCallRevert(route.connector, abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        _fillRecipes(_recipeOrder(10 ether, 10 ether), _oneRecipe(route));
+        assertEq(rwa.balanceOf(route.connector), 10 ether);
+        assertEq(outputToken.balanceOf(swapper), 10 ether);
+        assertEq(target.executions(), 1);
+        assertEq(
+            target.lastCallHash(),
+            keccak256(
+                abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
+            )
+        );
     }
 
     function testRecipeFillWithRealUpstreamExecutor() public {
@@ -1206,15 +1225,15 @@ contract ReactorTest is Test {
         _assertRecipeRollback(order, recipe);
     }
 
-    function testRecipeFillRejectsZeroAccountBeforeTransfer() public {
+    function testRecipeFillDoesNotReadAccountMetadata() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
-        IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
-        vm.mockCall(address(recipe), abi.encodeWithSelector(IRecipeExecutor.account.selector), abi.encode(address(0)));
-        vm.expectRevert(RecipeExecutorLib.RecipeExecutorLib__InvalidAccount.selector);
-        _fillRecipes(order, _oneRecipe(route));
-        assertEq(rwa.balanceOf(swapper), 100 ether);
-        assertEq(rwa.balanceOf(address(executor)), 0);
-        assertFalse(reactor.isUsedNonce(swapper, order.request.nonce));
+        address account = recipe.account();
+        vm.mockCallRevert(address(recipe), abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        vm.mockCallRevert(route.connector, abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        _fillRecipes(_recipeOrder(10 ether, 10 ether), _oneRecipe(route));
+        assertEq(rwa.balanceOf(account), 10 ether);
+        assertEq(outputToken.balanceOf(swapper), 10 ether);
+        assertEq(recipe.executions(), 1);
     }
 
     function testRecipeFillPostCallFailureRollsBackRecipe() public {

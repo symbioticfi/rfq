@@ -6,8 +6,10 @@ Recipe input routes (RFQ fill / LI.FI finalise / UniswapX execute)
 └── when the caller and callback are authorized
     ├── when a native RFQ input total differs from the signed amount
     │   └── it should revert before transfers
-    ├── when the RecipeExecutor has a zero/mismatched account or its connector is not version 2
-    │   └── it should revert before the recipe transfer
+    ├── when recipe account/version metadata is absent or reverts
+    │   └── it should forward caller-selected funding and the exact recipe payload without metadata validation
+    ├── when the caller selects a funding recipient unrelated to the recipe
+    │   └── it should let downstream execution and settlement determine whether the fill succeeds
     ├── when the recipe caller, commitment or managed action is invalid
     │   └── it should revert and roll back input, recipe effects and settlement state
     ├── when a route overdraws available LI.FI/UniswapX input

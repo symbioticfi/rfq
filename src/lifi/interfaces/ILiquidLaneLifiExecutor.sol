@@ -83,8 +83,8 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
     ) external;
     /**
      * @notice Finalises using direct, discount and committed RecipeExecutor routes.
-     * @dev Recipe legs fund version 2 connectors bound to the recipe account. Route amounts
-     * should use the input released after settler fees. The output settler resolves and enforces output.
+     * @dev The authorized caller selects recipe input recipients and amounts using the input
+     * released after settler fees. The output settler resolves and enforces output.
      */
     function finaliseWithCurrentTimestamp(
         IInputSettler.StandardOrder calldata order,

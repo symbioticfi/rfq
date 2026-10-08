@@ -66,6 +66,25 @@ contract MockRecipeExecutor {
     }
 }
 
+/// @dev Execute-only target without account/version getters. Records the exact forwarded payload.
+contract MockRecipeOutputExecutor {
+    using SafeERC20 for IERC20;
+
+    uint256 public executions;
+    bytes32 public lastCallHash;
+
+    function execute(bytes[] calldata, bytes[] calldata, uint256[] calldata inputs, bytes[] calldata runtime)
+        external
+        returns (uint256[] memory)
+    {
+        ++executions;
+        lastCallHash = keccak256(msg.data);
+        (address token, address recipient, uint256 amount) = abi.decode(runtime[0], (address, address, uint256));
+        IERC20(token).safeTransfer(recipient, amount);
+        return inputs;
+    }
+}
+
 contract MockRecipeAccount {
     struct Action {
         address target;
