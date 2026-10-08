@@ -2,12 +2,11 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
-import {RecipeExecutorLib} from "src/libraries/RecipeExecutorLib.sol";
-
 import {IInputSettler} from "./interfaces/IInputSettler.sol";
 import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {ILiquidLaneLifiExecutor} from "./interfaces/ILiquidLaneLifiExecutor.sol";
 import {IOutputSettler} from "./interfaces/IOutputSettler.sol";
+import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
 import {IRecipeRoute, LIQUID_LANE_CONNECTOR_VERSION} from "src/interfaces/IRecipeRoute.sol";
 
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
@@ -128,7 +127,9 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         }
 
         for (uint256 i; i < recipeRoutes.length; ++i) {
-            RecipeExecutorLib.execute(tokenIn, recipeRoutes[i]);
+            IRecipeRoute.RecipeRoute memory route = recipeRoutes[i];
+            IERC20(tokenIn).safeTransfer(route.connector, route.amountIn);
+            IRecipeExecutor(route.executor).execute(route.queries, route.steps, route.inputs, route.runtime);
         }
 
         // The output settler resolves the context-dependent amount it is owed and pulls it,

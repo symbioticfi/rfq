@@ -18,6 +18,7 @@ import {ILiquidLaneAdapter} from "../src/interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, NATIVE, ORDER_TYPEHASH, OUTPUT_TYPEHASH, REQUEST_TYPEHASH} from "../src/interfaces/IReactor.sol";
 
 import {IERC20Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
@@ -979,6 +980,7 @@ contract ReactorTest is Test {
         route.runtime = new bytes[](1);
         route.runtime[0] = abi.encode(address(outputToken), address(executor), 10 ether);
         vm.mockCallRevert(route.connector, abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        vm.mockCallRevert(address(rwa), abi.encodeCall(IERC20.transfer, (route.connector, 10 ether)), hex"feed");
         _fillRecipes(_recipeOrder(10 ether, 10 ether), _oneRecipe(route));
         assertEq(rwa.balanceOf(route.connector), 10 ether);
         assertEq(outputToken.balanceOf(swapper), 10 ether);

@@ -610,6 +610,22 @@ contract LiquidLaneLifiExecutorTest is Test {
         assertTrue(outputSettler.attested());
     }
 
+    function testFinaliseRecipeTransfersZeroAmountAfterExistingFunding() public {
+        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        route.amountIn = 0;
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        vm.expectCall(address(rwa), abi.encodeCall(IERC20.transfer, (route.connector, 0)), 1);
+        executor.finaliseWithCurrentTimestamp(
+            order, _directRoutes(route.connector, 10 ether, 0), _noDiscountRoutes(), _oneRecipe(route)
+        );
+        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
+        assertEq(rwa.balanceOf(recipe.account()), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(recipe.executions(), 1);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+    }
+
     function testFinaliseCombinesDirectDiscountAndRecipeRoutes() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(5 ether, 5 ether);
         IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);

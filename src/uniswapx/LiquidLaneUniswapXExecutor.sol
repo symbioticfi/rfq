@@ -2,10 +2,9 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
-import {RecipeExecutorLib} from "src/libraries/RecipeExecutorLib.sol";
-
 import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {ILiquidLaneUniswapXExecutor} from "./interfaces/ILiquidLaneUniswapXExecutor.sol";
+import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
 import {IRecipeRoute, LIQUID_LANE_CONNECTOR_VERSION} from "src/interfaces/IRecipeRoute.sol";
 import {IUniswapXReactor, UniswapXResolvedOrder, UniswapXSignedOrder} from "./interfaces/IUniswapXReactor.sol";
 
@@ -83,7 +82,9 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
         }
 
         for (uint256 i; i < recipeRoutes.length; ++i) {
-            RecipeExecutorLib.execute(tokenIn, recipeRoutes[i]);
+            IRecipeRoute.RecipeRoute memory route = recipeRoutes[i];
+            IERC20(tokenIn).safeTransfer(route.connector, route.amountIn);
+            IRecipeExecutor(route.executor).execute(route.queries, route.steps, route.inputs, route.runtime);
         }
 
         uint256 outputsLength = resolvedOrders[0].outputs.length;

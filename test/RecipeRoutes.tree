@@ -17,6 +17,8 @@ Recipe input routes (RFQ fill / LI.FI finalise / UniswapX execute)
     └── when recipe execution succeeds
         ├── with varying input amounts
         │   └── it should fund the connector, execute its account-only swap, and settle output
+        ├── with a zero recipe amount after an existing input leg funds the connector
+        │   └── LI.FI/UniswapX should transfer zero and execute the recipe; native RFQ funding stays in Reactor
         ├── with mixed direct, discount and recipe routes
         │   └── it should execute each leg and settle their combined output
         ├── with multiple recipes

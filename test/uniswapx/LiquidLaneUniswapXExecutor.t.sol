@@ -348,6 +348,22 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         assertEq(recipe.executions(), 1);
     }
 
+    function testExecuteRecipeTransfersZeroAmountAfterExistingFunding() public {
+        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        route.amountIn = 0;
+        ILiquidLaneUniswapXExecutor.FillRoute[] memory direct = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        direct[0] = _directRoute(route.connector, 10 ether, 0);
+        vm.expectCall(address(inputToken), abi.encodeCall(IERC20.transfer, (route.connector, 0)), 1);
+        vm.prank(caller);
+        executor.execute(
+            _signedOrder(), _fillCall(direct, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)), _oneRecipe(route)
+        );
+        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
+        assertEq(inputToken.balanceOf(recipe.account()), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(recipe.executions(), 1);
+    }
+
     function testExecuteCombinesDirectDiscountAndRecipeRoutes() public {
         adapter.setDirectOutput(3 ether);
         adapter.setDiscountOutput(2 ether);
