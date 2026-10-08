@@ -3,15 +3,16 @@ pragma solidity ^0.8.28;
 
 import {DeployLifiExecutorBaseScript} from "./deploy/base/DeployLifiExecutorBase.s.sol";
 
-// forge script script/DeployLifiExecutor.s.sol:DeployLifiExecutorScript --rpc-url=RPC --broadcast
+// forge script script/DeployLifiExecutor.s.sol:DeployLifiExecutorScript \
+//     --rpc-url "$ETH_RPC_URL" --account "$ACCOUNT" --sender "$SENDER" --broadcast
 
 contract DeployLifiExecutorScript is DeployLifiExecutorBaseScript {
     // Configurations - UPDATE THESE BEFORE DEPLOYMENT
 
     // LI.FI OIF InputSettlerEscrow this executor finalises orders through.
-    address public constant INPUT_SETTLER = 0x000025c3226C00B2Cdc200005a1600509f4e00C0;
+    address public constant INPUT_SETTLER = 0x00fC00edbe7C003b006f870068c548940000223e;
     // LI.FI OIF OutputSettler this executor fills and attests outputs through.
-    address public constant OUTPUT_SETTLER = 0x0000000000eC36B683C2E6AC89e9A75989C22a2e;
+    address public constant OUTPUT_SETTLER = 0x75220B7600c300005038432a0000f308e0000068;
     // Executor owner. Defaults to the sender when left zero.
     address public constant ADMIN = 0x0000000000000000000000000000000000000000;
     // Owner of the proxy's ProxyAdmin, authorized to upgrade. Defaults to the sender when left zero.
