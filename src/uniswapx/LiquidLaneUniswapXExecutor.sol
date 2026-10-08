@@ -36,7 +36,11 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
     }
 
     modifier onlyCaller() {
-        if (!_isCaller(msg.sender)) revert NotCaller();
+        uint256 i;
+        for (; i < callers.length; ++i) {
+            if (callers[i] == msg.sender) break;
+        }
+        if (i == callers.length) revert NotCaller();
         _;
     }
 
@@ -60,8 +64,7 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
             abi.decode(callbackData, (FillCall, IRecipeRoute.RecipeRoute[]));
         address tokenIn = resolvedOrders[0].input.token;
 
-        uint256 routesLength = fillCall.routes.length;
-        for (uint256 i; i < routesLength; ++i) {
+        for (uint256 i; i < fillCall.routes.length; ++i) {
             FillRoute memory route = fillCall.routes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
             if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
@@ -72,8 +75,7 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
                     })
                 );
         }
-        uint256 discountRoutesLength = fillCall.discountRoutes.length;
-        for (uint256 i; i < discountRoutesLength; ++i) {
+        for (uint256 i; i < fillCall.discountRoutes.length; ++i) {
             DiscountRoute memory route = fillCall.discountRoutes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
             if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
@@ -87,8 +89,7 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
             IRecipeExecutor(route.executor).execute(route.queries, route.steps, route.inputs, route.runtime);
         }
 
-        uint256 outputsLength = resolvedOrders[0].outputs.length;
-        for (uint256 i; i < outputsLength; ++i) {
+        for (uint256 i; i < resolvedOrders[0].outputs.length; ++i) {
             address token = resolvedOrders[0].outputs[i].token;
             // Native output (address(0)) is forwarded below; only ERC-20 outputs need a Reactor allowance.
             if (token != address(0) && IERC20(token).allowance(address(this), REACTOR) < type(uint256).max) {
@@ -103,14 +104,6 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
     function setCallers(address[] calldata newCallers) public onlyOwner {
         callers = newCallers;
         emit SetCallers(newCallers);
-    }
-
-    function _isCaller(address caller) internal view returns (bool) {
-        uint256 callersLength = callers.length;
-        for (uint256 i; i < callersLength; ++i) {
-            if (callers[i] == caller) return true;
-        }
-        return false;
     }
 
     receive() external payable {}

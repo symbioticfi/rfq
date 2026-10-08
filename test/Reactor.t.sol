@@ -1159,6 +1159,18 @@ contract ReactorTest is Test {
         assertEq(callTarget.lastValue(), 7);
     }
 
+    function testRecipeFillAcceptsCallerAtEndOfList() public {
+        address[] memory allowed = new address[](3);
+        allowed[0] = makeAddr("firstCaller");
+        allowed[1] = makeAddr("secondCaller");
+        allowed[2] = filler;
+        executor.setCallers(allowed);
+        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        _fillRecipes(_recipeOrder(10 ether, 10 ether), _oneRecipe(route));
+        assertEq(recipe.executions(), 1);
+        assertEq(outputToken.balanceOf(swapper), 10 ether);
+    }
+
     function testRecipeFillRejectsUnauthorizedFiller() public {
         (IRecipeRoute.RecipeRoute memory route,) = _newRecipe(10 ether, 10 ether);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);

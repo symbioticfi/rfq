@@ -53,7 +53,11 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
 
     /// @dev Reverts unless the caller is in the allowed caller list.
     modifier onlyCaller() {
-        if (!_isCaller(msg.sender)) {
+        uint256 i;
+        for (; i < callers.length; ++i) {
+            if (callers[i] == msg.sender) break;
+        }
+        if (i == callers.length) {
             revert NotCaller();
         }
 
@@ -70,9 +74,36 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         RecipeFill calldata recipeFill
     ) public onlyCaller {
-        IReactor.SwapInput[] memory inputs = _recipeInputs(order.request.tokenIn, swapInputs, recipeFill.routes);
-        IReactor(REACTOR)
-            .fill(order, protocolSignature, inputs, discountSwapInputs, abi.encode(_recipeCalls(recipeFill)));
+        IReactor.SwapInput[] memory inputs = new IReactor.SwapInput[](swapInputs.length + recipeFill.routes.length);
+        for (uint256 i; i < swapInputs.length; ++i) {
+            inputs[i] = swapInputs[i];
+        }
+        for (uint256 i; i < recipeFill.routes.length; ++i) {
+            inputs[swapInputs.length + i] = IReactor.SwapInput({
+                adapter: recipeFill.routes[i].connector,
+                swap: ILiquidLaneAdapter.Swap({
+                    recipient: address(this),
+                    tokenIn: order.request.tokenIn,
+                    amountIn: recipeFill.routes[i].amountIn,
+                    amountOut: 0
+                })
+            });
+        }
+
+        Call[] memory calls = new Call[](recipeFill.routes.length + recipeFill.postCalls.length);
+        for (uint256 i; i < recipeFill.routes.length; ++i) {
+            IRecipeRoute.RecipeRoute calldata route = recipeFill.routes[i];
+            calls[i] = Call({
+                target: route.executor,
+                value: 0,
+                data: abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
+            });
+        }
+        for (uint256 i; i < recipeFill.postCalls.length; ++i) {
+            calls[recipeFill.routes.length + i] = recipeFill.postCalls[i];
+        }
+
+        IReactor(REACTOR).fill(order, protocolSignature, inputs, discountSwapInputs, abi.encode(calls));
     }
 
     /// @inheritdoc IExecutor
@@ -157,52 +188,6 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         callers = newCallers;
 
         emit SetCallers(newCallers);
-    }
-
-    /* INTERNAL FUNCTIONS */
-
-    function _recipeInputs(
-        address tokenIn,
-        IReactor.SwapInput[] calldata swapInputs,
-        IRecipeRoute.RecipeRoute[] calldata recipes
-    ) internal view returns (IReactor.SwapInput[] memory inputs) {
-        inputs = new IReactor.SwapInput[](swapInputs.length + recipes.length);
-        for (uint256 i; i < swapInputs.length; ++i) {
-            inputs[i] = swapInputs[i];
-        }
-        for (uint256 i; i < recipes.length; ++i) {
-            inputs[swapInputs.length + i] = IReactor.SwapInput({
-                adapter: recipes[i].connector,
-                swap: ILiquidLaneAdapter.Swap({
-                    recipient: address(this), tokenIn: tokenIn, amountIn: recipes[i].amountIn, amountOut: 0
-                })
-            });
-        }
-    }
-
-    function _recipeCalls(RecipeFill calldata recipeFill) internal pure returns (Call[] memory calls) {
-        calls = new Call[](recipeFill.routes.length + recipeFill.postCalls.length);
-        for (uint256 i; i < recipeFill.routes.length; ++i) {
-            IRecipeRoute.RecipeRoute calldata route = recipeFill.routes[i];
-            calls[i] = Call({
-                target: route.executor,
-                value: 0,
-                data: abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
-            });
-        }
-        for (uint256 i; i < recipeFill.postCalls.length; ++i) {
-            calls[recipeFill.routes.length + i] = recipeFill.postCalls[i];
-        }
-    }
-
-    /// @dev Returns whether `caller` can invoke fill entrypoints.
-    function _isCaller(address caller) internal view returns (bool) {
-        for (uint256 i; i < callers.length; ++i) {
-            if (callers[i] == caller) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /* RECEIVE FUNCTION */

@@ -1,6 +1,8 @@
 Recipe input routes (RFQ fill / LI.FI finalise / UniswapX execute)
 ├── when the initiating caller is unauthorized
 │   └── it should revert before input is spent
+├── when the caller list is empty
+│   └── it should reject execution without spending input
 ├── when the callback sender is unauthorized
 │   └── it should preserve the existing Reactor/settler authentication
 └── when the caller and callback are authorized
@@ -15,6 +17,8 @@ Recipe input routes (RFQ fill / LI.FI finalise / UniswapX execute)
     ├── when a route overdraws available LI.FI/UniswapX input
     │   └── it should revert and roll back the fill
     └── when recipe execution succeeds
+        ├── with the initiating caller at the end of the caller list
+        │   └── it should authorize the fill and settle output
         ├── with varying input amounts
         │   └── it should fund the connector, execute its account-only swap, and settle output
         ├── with a zero recipe amount after an existing input leg funds the connector

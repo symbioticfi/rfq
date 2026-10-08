@@ -396,6 +396,30 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         assertEq(outputToken.balanceOf(address(executor)), 1 ether);
     }
 
+    function testExecuteRecipeAcceptsCallerAtEndOfList() public {
+        address[] memory allowed = new address[](3);
+        allowed[0] = makeAddr("firstCaller");
+        allowed[1] = makeAddr("secondCaller");
+        allowed[2] = caller;
+        vm.prank(owner);
+        executor.setCallers(allowed);
+        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        vm.prank(caller);
+        executor.execute(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        assertEq(recipe.executions(), 1);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+    }
+
+    function testExecuteRecipeRejectsEmptyCallerList() public {
+        vm.prank(owner);
+        executor.setCallers(new address[](0));
+        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        vm.prank(caller);
+        vm.expectRevert(ILiquidLaneUniswapXExecutor.NotCaller.selector);
+        executor.execute(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _assertRecipeRollback(recipe);
+    }
+
     function testExecuteRecipeRejectsUnauthorizedCaller() public {
         (IRecipeRoute.RecipeRoute memory route,) = _newRecipe(10 ether, 10 ether);
         vm.prank(makeAddr("intruder"));

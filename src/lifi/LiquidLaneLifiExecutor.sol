@@ -105,8 +105,7 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         // Adapters assume their input has already been transferred to them before the swap call.
         // forge-lint: disable-next-line(unsafe-typecast)
         address tokenIn = address(uint160(inputs[0][0]));
-        uint256 routesLength = fillCall.routes.length;
-        for (uint256 i; i < routesLength; ++i) {
+        for (uint256 i; i < fillCall.routes.length; ++i) {
             FillRoute memory route = fillCall.routes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
             if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
@@ -117,8 +116,7 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
                     })
                 );
         }
-        uint256 discountRoutesLength = fillCall.discountRoutes.length;
-        for (uint256 i; i < discountRoutesLength; ++i) {
+        for (uint256 i; i < fillCall.discountRoutes.length; ++i) {
             DiscountRoute memory route = fillCall.discountRoutes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
             if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
@@ -164,10 +162,8 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     /// @dev The LI.FI registration message is wrapped in this executor's EIP-712 domain and accepted
     /// only if signed by an authorized caller, binding the signature to both the signer and this proxy.
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
-        bytes32 digest = lifiRegistrationDigest(hash);
-        uint256 callersLength = callers.length;
-        for (uint256 i; i < callersLength; ++i) {
-            if (SignatureChecker.isValidSignatureNowCalldata(callers[i], digest, signature)) {
+        for (uint256 i; i < callers.length; ++i) {
+            if (SignatureChecker.isValidSignatureNowCalldata(callers[i], lifiRegistrationDigest(hash), signature)) {
                 return IERC1271.isValidSignature.selector;
             }
         }
@@ -188,17 +184,15 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         fillCall.fillDeadline = order.fillDeadline;
         fillCall.routes = routes;
         fillCall.discountRoutes = discountRoutes;
-        bytes memory executionData = abi.encode(fillCall, recipeRoutes);
         bytes32 executorId = bytes32(uint256(uint160(address(this))));
         IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
         solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
-        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, executionData);
+        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, abi.encode(fillCall, recipeRoutes));
     }
 
     /// @dev Returns whether `caller` can invoke the finalise entrypoint.
     function _isCaller(address caller) internal view returns (bool) {
-        uint256 callersLength = callers.length;
-        for (uint256 i; i < callersLength; ++i) {
+        for (uint256 i; i < callers.length; ++i) {
             if (callers[i] == caller) return true;
         }
         return false;
