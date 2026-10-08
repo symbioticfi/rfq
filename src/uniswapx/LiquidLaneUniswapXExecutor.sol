@@ -67,8 +67,8 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
             ILiquidLaneAdapter(route.adapter)
                 .swap(
                     ILiquidLaneAdapter.Swap({
-                        recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
-                    })
+                    recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
+                })
                 );
         }
         uint256 discountRoutesLength = fillCall.discountRoutes.length;

@@ -219,11 +219,8 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         ILiquidLaneAdapter(LIQUID_LANE_ADAPTER)
             .swap(
                 ILiquidLaneAdapter.Swap({
-                    recipient: address(this),
-                    tokenIn: ctx.collateralToken,
-                    amountIn: ctx.seizedAssets,
-                    amountOut: amountOut
-                })
+                recipient: address(this), tokenIn: ctx.collateralToken, amountIn: ctx.seizedAssets, amountOut: amountOut
+            })
             );
 
         uint256 gained = IERC20(ctx.loanToken).balanceOf(address(this)) - loanBefore;
