@@ -36,11 +36,7 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
     }
 
     modifier onlyCaller() {
-        uint256 i;
-        for (; i < callers.length; ++i) {
-            if (callers[i] == msg.sender) break;
-        }
-        if (i == callers.length) revert NotCaller();
+        if (!_isCaller(msg.sender)) revert NotCaller();
         _;
     }
 
@@ -104,6 +100,13 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
     function setCallers(address[] calldata newCallers) public onlyOwner {
         callers = newCallers;
         emit SetCallers(newCallers);
+    }
+
+    function _isCaller(address caller) internal view returns (bool) {
+        for (uint256 i; i < callers.length; ++i) {
+            if (callers[i] == caller) return true;
+        }
+        return false;
     }
 
     receive() external payable {}
