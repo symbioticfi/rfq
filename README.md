@@ -62,11 +62,13 @@ Existing fill entrypoints and public LiquidLane route structs remain available. 
 
 ## Test Locally
 
-Run commands from the repository root:
+Use Foundry `v1.8.5`, Node.js from [.nvmrc](.nvmrc), pnpm `12.10.1`, Python `3.14.8`, and pre-commit `4.6.2`. Run commands from the repository root:
 
 ```bash
 forge build
 forge test --isolate
+forge fmt --check
+pre-commit run --all-files
 ```
 
 Recipe tests cover all three executors, mixed LiquidLane/recipe routes, multiple bound accounts, caller and commitment rejection, output shortfall, native outputs, and atomic rollback. They also deploy pinned upstream RecipeExecutor bytecode and forward managed-action runtime data with Merkle proofs. See [fixture provenance and reproduction](test/fixtures/SOURCE.md) for the real-contract and mock boundaries. The optional mainnet and Sepolia fork suites require `ETH_RPC_URL` and `ETH_RPC_URL_SEPOLIA`, respectively.

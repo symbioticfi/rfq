@@ -5,8 +5,8 @@ pragma solidity ^0.8.0;
 import {IInputCallback} from "./IInputCallback.sol";
 import {IInputSettler} from "./IInputSettler.sol";
 import {MandateOutput} from "./IOutputSettler.sol";
-import {ILiquidLaneAdapter} from "../../interfaces/ILiquidLaneAdapter.sol";
 
+import {ILiquidLaneAdapter} from "../../interfaces/ILiquidLaneAdapter.sol";
 import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
 
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
@@ -19,6 +19,7 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
     /* ERRORS */
 
     error NotCaller();
+
     error NotInputSettler();
 
     /* EVENTS */
