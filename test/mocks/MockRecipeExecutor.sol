@@ -153,7 +153,7 @@ contract MockRecipeAccount {
     receive() external payable {}
 }
 
-/// @dev Version 2 connector fixture: account-only swap, input returned to account, output pulled from account.
+/// @dev Version 1 connector fixture: account-only swap, input returned to account, output pulled from account.
 contract MockLiquidLaneConnector {
     using SafeERC20 for IERC20;
     address public immutable account;
@@ -165,7 +165,7 @@ contract MockLiquidLaneConnector {
     }
 
     function version() external pure returns (uint64) {
-        return 2;
+        return 1;
     }
 
     function setOutputAsset(address asset) external {

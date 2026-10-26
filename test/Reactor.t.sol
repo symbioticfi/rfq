@@ -905,7 +905,7 @@ contract ReactorTest is Test {
             _order(new IReactor.Output[](0), 0),
             new IReactor.SwapInput[](0),
             new IReactor.DiscountSwapInput[](0),
-            abi.encode(calls)
+            abi.encode(uint256(0), calls)
         );
 
         assertEq(callTarget.lastValue(), 7);
@@ -914,7 +914,7 @@ contract ReactorTest is Test {
 
     /* RECIPE ROUTES */
 
-    function testExistingFillInvokesRecipeForRegisteredV2Connector() public {
+    function testDirectAdapterFillRejectsConnectorLeg() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         IReactor.SwapInput[] memory inputs = new IReactor.SwapInput[](1);
@@ -931,20 +931,22 @@ contract ReactorTest is Test {
             data: abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
         });
         bytes memory signature = _signOrder(order);
+        vm.expectRevert(bytes("not account"));
         vm.prank(filler);
         executor.fill(order, signature, inputs, new IReactor.DiscountSwapInput[](0), abi.encode(calls));
-        assertEq(outputToken.balanceOf(swapper), 10 ether);
-        assertEq(rwa.balanceOf(recipe.account()), 10 ether);
-        assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 1);
+        assertEq(outputToken.balanceOf(swapper), 0);
+        assertEq(rwa.balanceOf(recipe.account()), 0);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 0);
     }
 
-    function testRecipeFillUsesExistingDiscountLegForV2Funding() public {
+    function testDiscountAdapterLegRejectsConnector() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         route.amountIn = 0;
         IReactor.DiscountSwapInput[] memory inputs = new IReactor.DiscountSwapInput[](1);
         inputs[0] = _discountSwapInput(route.connector, vault0, 10 ether, 0);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         bytes memory signature = _signOrder(order);
+        vm.expectRevert();
         vm.prank(filler);
         executor.fill(
             order,
@@ -953,9 +955,9 @@ contract ReactorTest is Test {
             inputs,
             IExecutor.RecipeFill({routes: _oneRecipe(route), postCalls: new IExecutor.Call[](0)})
         );
-        assertEq(outputToken.balanceOf(swapper), 10 ether);
-        assertEq(rwa.balanceOf(recipe.account()), 10 ether);
-        assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 1);
+        assertEq(outputToken.balanceOf(swapper), 0);
+        assertEq(rwa.balanceOf(recipe.account()), 0);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 0);
     }
 
     function testRecipeFillDefersMismatchedFundingFailureToToken() public {
@@ -1085,7 +1087,7 @@ contract ReactorTest is Test {
         assertFalse(reactor.isUsedNonce(swapper, order.request.nonce));
     }
 
-    function testFuzzRecipeFillFundsVersion2ConnectorAndSettles(uint96 rawAmount) public {
+    function testFuzzRecipeFillFundsVersion1ConnectorAndSettles(uint96 rawAmount) public {
         uint256 amount = bound(rawAmount, 1, 20 ether);
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(amount, amount);
         IReactor.Order memory order = _recipeOrder(amount, amount);

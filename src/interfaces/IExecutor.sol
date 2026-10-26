@@ -58,7 +58,7 @@ interface IExecutor {
     /**
      * @notice Fills an order using direct, discount and committed recipe input legs.
      * @dev The Reactor funds registered adapters/connectors using the existing input legs.
-     * Version 2 connector actions run through recipes after direct version 1 swaps and before postCalls.
+     * Connector actions run through the explicit recipe legs after adapter swaps and before postCalls.
      * Direct, discount and recipe connector input amounts together must equal the signed input amount.
      */
     function fill(

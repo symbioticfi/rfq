@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-/// @dev LiquidLaneConnector implementation registered as version 2 in LiquidLaneAdapterFactory.
-uint64 constant LIQUID_LANE_CONNECTOR_VERSION = 2;
-
 /**
  * @title IRecipeRoute
  * @notice Shared execution schema for committed RecipeExecutor swaps.

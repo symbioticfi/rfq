@@ -5,7 +5,7 @@ pragma solidity 0.8.28;
 import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {ILiquidLaneUniswapXExecutor} from "./interfaces/ILiquidLaneUniswapXExecutor.sol";
 import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
-import {IRecipeRoute, LIQUID_LANE_CONNECTOR_VERSION} from "src/interfaces/IRecipeRoute.sol";
+import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
 import {IUniswapXReactor, UniswapXResolvedOrder, UniswapXSignedOrder} from "./interfaces/IUniswapXReactor.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
@@ -13,8 +13,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
-import {IMigratableEntity} from "@symbioticfi/core/src/interfaces/common/IMigratableEntity.sol";
 
 /// @title LiquidLaneUniswapXExecutor
 /// @notice UniswapX Reactor callback that atomically sources outputs from LiquidLane adapters.
@@ -63,7 +61,6 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
         for (uint256 i; i < fillCall.routes.length; ++i) {
             FillRoute memory route = fillCall.routes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
-            if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(
                     ILiquidLaneAdapter.Swap({
@@ -74,7 +71,6 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
         for (uint256 i; i < fillCall.discountRoutes.length; ++i) {
             DiscountRoute memory route = fillCall.discountRoutes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
-            if (IMigratableEntity(route.adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(route.discountSwap, route.protocolSignature, address(this), route.amountIn);
         }

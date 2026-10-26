@@ -6,15 +6,13 @@ import {IExecutor} from "./interfaces/IExecutor.sol";
 import {ILiquidLaneAdapter} from "./interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
 import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
-import {IRecipeRoute, LIQUID_LANE_CONNECTOR_VERSION} from "src/interfaces/IRecipeRoute.sol";
+import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
-import {IMigratableEntity} from "@symbioticfi/core/src/interfaces/common/IMigratableEntity.sol";
 
 /// @title Executor
 /// @notice Caller-gated executor that forwards fills into Reactor and handles execution callbacks.
@@ -99,7 +97,8 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
             calls[recipeFill.routes.length + i] = recipeFill.postCalls[i];
         }
 
-        IReactor(REACTOR).fill(order, protocolSignature, inputs, discountSwapInputs, abi.encode(calls));
+        IReactor(REACTOR)
+            .fill(order, protocolSignature, inputs, discountSwapInputs, abi.encode(swapInputs.length, calls));
     }
 
     /// @inheritdoc IExecutor
@@ -109,7 +108,8 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         IReactor.SwapInput calldata swapInput,
         bytes calldata executorData
     ) public onlyCaller {
-        IReactor(REACTOR).fill(order, protocolSignature, swapInput, executorData);
+        IReactor(REACTOR)
+            .fill(order, protocolSignature, swapInput, abi.encode(uint256(1), abi.decode(executorData, (Call[]))));
     }
 
     /// @inheritdoc IExecutor
@@ -119,7 +119,10 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         IReactor.SwapInput[] calldata swapInputs,
         bytes calldata executorData
     ) public onlyCaller {
-        IReactor(REACTOR).fill(order, protocolSignature, swapInputs, executorData);
+        IReactor(REACTOR)
+            .fill(
+                order, protocolSignature, swapInputs, abi.encode(swapInputs.length, abi.decode(executorData, (Call[])))
+            );
     }
 
     /// @inheritdoc IExecutor
@@ -130,7 +133,14 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
     ) public onlyCaller {
-        IReactor(REACTOR).fill(order, protocolSignature, swapInputs, discountSwapInputs, executorData);
+        IReactor(REACTOR)
+            .fill(
+                order,
+                protocolSignature,
+                swapInputs,
+                discountSwapInputs,
+                abi.encode(swapInputs.length, abi.decode(executorData, (Call[])))
+            );
     }
 
     /// @inheritdoc IExecutor
@@ -144,12 +154,12 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
             revert NotReactor();
         }
 
-        for (uint256 i; i < swapInputs.length; ++i) {
-            if (IMigratableEntity(swapInputs[i].adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
+        // Recipe input legs fund their connectors; only the explicitly supplied adapter legs call swap here.
+        (uint256 directSwapCount, Call[] memory calls) = abi.decode(executorData, (uint256, Call[]));
+        for (uint256 i; i < directSwapCount; ++i) {
             ILiquidLaneAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
-            if (IMigratableEntity(discountSwapInputs[i].adapter).version() == LIQUID_LANE_CONNECTOR_VERSION) continue;
             ILiquidLaneAdapter(discountSwapInputs[i].adapter)
                 .swap(
                     discountSwapInputs[i].discountSwap,
@@ -159,7 +169,6 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
                 );
         }
 
-        Call[] memory calls = abi.decode(executorData, (Call[]));
         for (uint256 i; i < calls.length; ++i) {
             calls[i].target.functionCallWithValue(calls[i].data, calls[i].value);
         }

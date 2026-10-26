@@ -333,7 +333,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
     }
 
-    function testFuzzExecuteRecipeFundsVersion2ConnectorAndSettles(uint96 rawAmount) public {
+    function testFuzzExecuteRecipeFundsVersion1ConnectorAndSettles(uint96 rawAmount) public {
         uint256 amount = bound(rawAmount, 1, 20 ether);
         if (amount > 10 ether) inputToken.mint(address(reactor), amount - 10 ether);
         reactor.setOrder(_resolvedOrder(amount, _erc20Outputs(address(outputToken), amount, recipient)));
@@ -348,20 +348,20 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         assertEq(recipe.executions(), 1);
     }
 
-    function testExecuteRecipeTransfersZeroAmountAfterExistingFunding() public {
+    function testExecuteRecipeRejectsConnectorInAdapterRoute() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         route.amountIn = 0;
         ILiquidLaneUniswapXExecutor.FillRoute[] memory direct = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
         direct[0] = _directRoute(route.connector, 10 ether, 0);
-        vm.expectCall(address(inputToken), abi.encodeCall(IERC20.transfer, (route.connector, 0)), 1);
+        vm.expectRevert(bytes("not account"));
         vm.prank(caller);
         executor.execute(
             _signedOrder(), _fillCall(direct, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)), _oneRecipe(route)
         );
-        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
-        assertEq(inputToken.balanceOf(recipe.account()), 10 ether);
-        assertEq(outputToken.balanceOf(recipient), 9 ether);
-        assertEq(recipe.executions(), 1);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 0);
+        assertEq(inputToken.balanceOf(recipe.account()), 0);
+        assertEq(outputToken.balanceOf(recipient), 0);
+        assertEq(recipe.executions(), 0);
     }
 
     function testExecuteCombinesDirectDiscountAndRecipeRoutes() public {

@@ -594,7 +594,7 @@ contract LiquidLaneLifiExecutorTest is Test {
         assertTrue(outputSettler.attested());
     }
 
-    function testFuzzFinaliseRecipeFundsVersion2ConnectorAndSettles(uint96 rawAmount) public {
+    function testFuzzFinaliseRecipeFundsVersion1ConnectorAndSettles(uint96 rawAmount) public {
         uint256 amount = bound(rawAmount, 1, 20 ether);
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(amount, amount);
         IInputSettler.StandardOrder memory order = _order(amount, amount);
@@ -610,20 +610,20 @@ contract LiquidLaneLifiExecutorTest is Test {
         assertTrue(outputSettler.attested());
     }
 
-    function testFinaliseRecipeTransfersZeroAmountAfterExistingFunding() public {
+    function testFinaliseRecipeRejectsConnectorInAdapterRoute() public {
         (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         route.amountIn = 0;
         IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
         bytes32 orderId = _openOrder(order);
-        vm.expectCall(address(rwa), abi.encodeCall(IERC20.transfer, (route.connector, 0)), 1);
+        vm.expectRevert(bytes("not account"));
         executor.finaliseWithCurrentTimestamp(
             order, _directRoutes(route.connector, 10 ether, 0), _noDiscountRoutes(), _oneRecipe(route)
         );
-        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
-        assertEq(rwa.balanceOf(recipe.account()), 10 ether);
-        assertEq(outputToken.balanceOf(recipient), 9 ether);
-        assertEq(recipe.executions(), 1);
-        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 0);
+        assertEq(rwa.balanceOf(recipe.account()), 0);
+        assertEq(outputToken.balanceOf(recipient), 0);
+        assertEq(recipe.executions(), 0);
+        assertTrue(inputSettler.orderStatus(orderId) != ORDER_STATUS_CLAIMED);
     }
 
     function testFinaliseCombinesDirectDiscountAndRecipeRoutes() public {
