@@ -2,10 +2,9 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
+import {IExecutor} from "src/interfaces/IExecutor.sol";
 import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {ILiquidLaneUniswapXExecutor} from "./interfaces/ILiquidLaneUniswapXExecutor.sol";
-import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
-import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
 import {IUniswapXReactor, UniswapXResolvedOrder, UniswapXSignedOrder} from "./interfaces/IUniswapXReactor.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
@@ -19,6 +18,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiquidLaneUniswapXExecutor {
     using Address for address payable;
     using SafeERC20 for IERC20;
+    using Address for address;
 
     address internal immutable REACTOR;
     address[] public callers;
@@ -39,28 +39,28 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
     }
 
     function execute(UniswapXSignedOrder calldata order, FillCall calldata fillCall) public onlyCaller {
-        IUniswapXReactor(REACTOR).executeWithCallback(order, abi.encode(fillCall, new IRecipeRoute.RecipeRoute[](0)));
+        IUniswapXReactor(REACTOR).executeWithCallback(order, abi.encode(fillCall, new IExecutor.Call[](0)));
     }
 
-    /// @notice Executes an order with committed RecipeExecutor routes in addition to LiquidLane legs.
-    function execute(
-        UniswapXSignedOrder calldata order,
-        FillCall calldata fillCall,
-        IRecipeRoute.RecipeRoute[] calldata recipeRoutes
-    ) public onlyCaller {
-        IUniswapXReactor(REACTOR).executeWithCallback(order, abi.encode(fillCall, recipeRoutes));
+    /// @notice Executes an order with calls, including RecipeExecutor executions in addition to LiquidLane legs.
+    function execute(UniswapXSignedOrder calldata order, FillCall calldata fillCall, IExecutor.Call[] calldata calls)
+        public
+        onlyCaller
+    {
+        IUniswapXReactor(REACTOR).executeWithCallback(order, abi.encode(fillCall, calls));
     }
 
     function reactorCallback(UniswapXResolvedOrder[] memory resolvedOrders, bytes memory callbackData) external {
         if (msg.sender != REACTOR) revert NotReactor();
 
-        (FillCall memory fillCall, IRecipeRoute.RecipeRoute[] memory recipeRoutes) =
-            abi.decode(callbackData, (FillCall, IRecipeRoute.RecipeRoute[]));
+        (FillCall memory fillCall, IExecutor.Call[] memory calls) =
+            abi.decode(callbackData, (FillCall, IExecutor.Call[]));
         address tokenIn = resolvedOrders[0].input.token;
 
         for (uint256 i; i < fillCall.routes.length; ++i) {
             FillRoute memory route = fillCall.routes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            if (ILiquidLaneAdapter(route.adapter).version() != 1) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(
                     ILiquidLaneAdapter.Swap({
@@ -71,14 +71,13 @@ contract LiquidLaneUniswapXExecutor is Initializable, OwnableUpgradeable, ILiqui
         for (uint256 i; i < fillCall.discountRoutes.length; ++i) {
             DiscountRoute memory route = fillCall.discountRoutes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            if (ILiquidLaneAdapter(route.adapter).version() != 1) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(route.discountSwap, route.protocolSignature, address(this), route.amountIn);
         }
 
-        for (uint256 i; i < recipeRoutes.length; ++i) {
-            IRecipeRoute.RecipeRoute memory route = recipeRoutes[i];
-            IERC20(tokenIn).safeTransfer(route.connector, route.amountIn);
-            IRecipeExecutor(route.executor).execute(route.queries, route.steps, route.inputs, route.runtime);
+        for (uint256 i; i < calls.length; ++i) {
+            calls[i].target.functionCallWithValue(calls[i].data, calls[i].value);
         }
 
         for (uint256 i; i < resolvedOrders[0].outputs.length; ++i) {

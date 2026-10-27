@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import {IRecipes} from "src/interfaces/IRecipes.sol";
+import {IRecipes} from "test/interfaces/IRecipes.sol";
 
 import {IMulticallable} from "@symbioticfi/core/src/interfaces/common/IMulticallable.sol";
 

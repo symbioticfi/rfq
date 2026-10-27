@@ -5,8 +5,6 @@ pragma solidity 0.8.28;
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {ILiquidLaneAdapter} from "./interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
-import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
-import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -64,52 +62,10 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
-        IReactor.SwapInput[] calldata swapInputs,
-        IReactor.DiscountSwapInput[] calldata discountSwapInputs,
-        RecipeFill calldata recipeFill
-    ) public onlyCaller {
-        IReactor.SwapInput[] memory inputs = new IReactor.SwapInput[](swapInputs.length + recipeFill.routes.length);
-        for (uint256 i; i < swapInputs.length; ++i) {
-            inputs[i] = swapInputs[i];
-        }
-        for (uint256 i; i < recipeFill.routes.length; ++i) {
-            inputs[swapInputs.length + i] = IReactor.SwapInput({
-                adapter: recipeFill.routes[i].connector,
-                swap: ILiquidLaneAdapter.Swap({
-                    recipient: address(this),
-                    tokenIn: order.request.tokenIn,
-                    amountIn: recipeFill.routes[i].amountIn,
-                    amountOut: 0
-                })
-            });
-        }
-
-        Call[] memory calls = new Call[](recipeFill.routes.length + recipeFill.postCalls.length);
-        for (uint256 i; i < recipeFill.routes.length; ++i) {
-            IRecipeRoute.RecipeRoute calldata route = recipeFill.routes[i];
-            calls[i] = Call({
-                target: route.executor,
-                value: 0,
-                data: abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
-            });
-        }
-        for (uint256 i; i < recipeFill.postCalls.length; ++i) {
-            calls[recipeFill.routes.length + i] = recipeFill.postCalls[i];
-        }
-
-        IReactor(REACTOR)
-            .fill(order, protocolSignature, inputs, discountSwapInputs, abi.encode(swapInputs.length, calls));
-    }
-
-    /// @inheritdoc IExecutor
-    function fill(
-        IReactor.Order calldata order,
-        bytes calldata protocolSignature,
         IReactor.SwapInput calldata swapInput,
         bytes calldata executorData
     ) public onlyCaller {
-        IReactor(REACTOR)
-            .fill(order, protocolSignature, swapInput, abi.encode(uint256(1), abi.decode(executorData, (Call[]))));
+        IReactor(REACTOR).fill(order, protocolSignature, swapInput, executorData);
     }
 
     /// @inheritdoc IExecutor
@@ -119,10 +75,7 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         IReactor.SwapInput[] calldata swapInputs,
         bytes calldata executorData
     ) public onlyCaller {
-        IReactor(REACTOR)
-            .fill(
-                order, protocolSignature, swapInputs, abi.encode(swapInputs.length, abi.decode(executorData, (Call[])))
-            );
+        IReactor(REACTOR).fill(order, protocolSignature, swapInputs, executorData);
     }
 
     /// @inheritdoc IExecutor
@@ -133,14 +86,7 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
     ) public onlyCaller {
-        IReactor(REACTOR)
-            .fill(
-                order,
-                protocolSignature,
-                swapInputs,
-                discountSwapInputs,
-                abi.encode(swapInputs.length, abi.decode(executorData, (Call[])))
-            );
+        IReactor(REACTOR).fill(order, protocolSignature, swapInputs, discountSwapInputs, executorData);
     }
 
     /// @inheritdoc IExecutor
@@ -154,12 +100,13 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
             revert NotReactor();
         }
 
-        // Recipe input legs fund their connectors; only the explicitly supplied adapter legs call swap here.
-        (uint256 directSwapCount, Call[] memory calls) = abi.decode(executorData, (uint256, Call[]));
-        for (uint256 i; i < directSwapCount; ++i) {
-            ILiquidLaneAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
+        for (uint256 i; i < swapInputs.length; ++i) {
+            if (ILiquidLaneAdapter(swapInputs[i].adapter).version() == 1) {
+                ILiquidLaneAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
+            }
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
+            if (ILiquidLaneAdapter(discountSwapInputs[i].adapter).version() != 1) continue;
             ILiquidLaneAdapter(discountSwapInputs[i].adapter)
                 .swap(
                     discountSwapInputs[i].discountSwap,
@@ -169,6 +116,7 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
                 );
         }
 
+        Call[] memory calls = abi.decode(executorData, (Call[]));
         for (uint256 i; i < calls.length; ++i) {
             calls[i].target.functionCallWithValue(calls[i].data, calls[i].value);
         }

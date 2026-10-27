@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
+import {IExecutor} from "src/interfaces/IExecutor.sol";
+import {IRecipeExecutor} from "test/interfaces/IRecipeExecutor.sol";
 import {ILiquidLaneAdapter} from "src/interfaces/ILiquidLaneAdapter.sol";
-import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
-import {IRecipes, OP_CALL, OP_MANAGE, SRC_INPUT} from "src/interfaces/IRecipes.sol";
+import {IRecipes, OP_CALL, OP_MANAGE, SRC_INPUT} from "test/interfaces/IRecipes.sol";
 
 import {Vm} from "forge-std/Vm.sol";
 
@@ -165,7 +165,7 @@ contract MockLiquidLaneConnector {
     }
 
     function version() external pure returns (uint64) {
-        return 1;
+        return 2;
     }
 
     function setOutputAsset(address asset) external {
@@ -184,6 +184,30 @@ contract MockLiquidLaneConnector {
 }
 
 library RecipeRouteBuilder {
+    struct Recipe {
+        address executor;
+        address connector;
+        uint256 amountIn;
+        bytes[] queries;
+        bytes[] steps;
+        uint256[] inputs;
+        bytes[] runtime;
+    }
+
+    function calls(Recipe[] memory recipes) internal pure returns (IExecutor.Call[] memory out) {
+        out = new IExecutor.Call[](recipes.length);
+        for (uint256 i; i < recipes.length; ++i) {
+            Recipe memory recipe = recipes[i];
+            out[i] = IExecutor.Call({
+                target: recipe.executor,
+                value: 0,
+                data: abi.encodeCall(
+                    IRecipeExecutor.execute, (recipe.queries, recipe.steps, recipe.inputs, recipe.runtime)
+                )
+            });
+        }
+    }
+
     /// @dev Deploys the pinned upstream contract bytecode without adding adapters as a production dependency.
     function deployReal(Vm vm, address caller) internal returns (IRecipeExecutor executor) {
         string memory fixture = vm.readFile("test/fixtures/RecipeExecutor.json");
@@ -212,7 +236,7 @@ library RecipeRouteBuilder {
         address recipient,
         uint256 amountIn,
         uint256 amountOut
-    ) internal returns (IRecipeRoute.RecipeRoute memory route) {
+    ) internal returns (RecipeRouteBuilder.Recipe memory route) {
         route.executor = address(executor);
         route.connector = address(MockRecipeAccount(payable(executor.account())).connector());
         route.amountIn = amountIn;
@@ -261,7 +285,7 @@ library RecipeRouteBuilder {
         address recipient,
         uint256 amountIn,
         uint256 amountOut
-    ) internal returns (IRecipeRoute.RecipeRoute memory route) {
+    ) internal returns (RecipeRouteBuilder.Recipe memory route) {
         route.executor = address(executor);
         route.connector = address(MockRecipeAccount(payable(executor.account())).connector());
         route.amountIn = amountIn;

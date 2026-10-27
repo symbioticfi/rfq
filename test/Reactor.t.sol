@@ -2,8 +2,7 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
-import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
-import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
+import {IRecipeExecutor} from "test/interfaces/IRecipeExecutor.sol";
 import {
     MockRecipeExecutor,
     MockRecipeAccount,
@@ -905,7 +904,7 @@ contract ReactorTest is Test {
             _order(new IReactor.Output[](0), 0),
             new IReactor.SwapInput[](0),
             new IReactor.DiscountSwapInput[](0),
-            abi.encode(uint256(0), calls)
+            abi.encode(calls)
         );
 
         assertEq(callTarget.lastValue(), 7);
@@ -914,8 +913,8 @@ contract ReactorTest is Test {
 
     /* RECIPE ROUTES */
 
-    function testDirectAdapterFillRejectsConnectorLeg() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+    function testPermissionedInputFundsConnectorAndRunsRecipe() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         IReactor.SwapInput[] memory inputs = new IReactor.SwapInput[](1);
         inputs[0] = IReactor.SwapInput({
@@ -931,39 +930,37 @@ contract ReactorTest is Test {
             data: abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
         });
         bytes memory signature = _signOrder(order);
-        vm.expectRevert(bytes("not account"));
         vm.prank(filler);
         executor.fill(order, signature, inputs, new IReactor.DiscountSwapInput[](0), abi.encode(calls));
-        assertEq(outputToken.balanceOf(swapper), 0);
-        assertEq(rwa.balanceOf(recipe.account()), 0);
-        assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 0);
+        assertEq(outputToken.balanceOf(swapper), 10 ether);
+        assertEq(rwa.balanceOf(recipe.account()), 10 ether);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 1);
     }
 
-    function testDiscountAdapterLegRejectsConnector() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+    function testDiscountInputFundsConnectorAndRunsRecipe() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         route.amountIn = 0;
         IReactor.DiscountSwapInput[] memory inputs = new IReactor.DiscountSwapInput[](1);
         inputs[0] = _discountSwapInput(route.connector, vault0, 10 ether, 0);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         bytes memory signature = _signOrder(order);
-        vm.expectRevert();
         vm.prank(filler);
         executor.fill(
             order,
             signature,
             new IReactor.SwapInput[](0),
             inputs,
-            IExecutor.RecipeFill({routes: _oneRecipe(route), postCalls: new IExecutor.Call[](0)})
+            abi.encode(RecipeRouteBuilder.calls(_oneRecipe(route)))
         );
-        assertEq(outputToken.balanceOf(swapper), 0);
-        assertEq(rwa.balanceOf(recipe.account()), 0);
-        assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 0);
+        assertEq(outputToken.balanceOf(swapper), 10 ether);
+        assertEq(rwa.balanceOf(recipe.account()), 10 ether);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connector().swaps(), 1);
     }
 
     function testRecipeFillDefersMismatchedFundingFailureToToken() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         address unfundedConnector = route.connector;
-        (IRecipeRoute.RecipeRoute memory other,) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory other,) = _newRecipe(10 ether, 10 ether);
         route.connector = other.connector;
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         vm.expectRevert(
@@ -975,7 +972,7 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillAcceptsRecipeTargetWithoutAccountMetadata() public {
-        (IRecipeRoute.RecipeRoute memory route,) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route,) = _newRecipe(10 ether, 10 ether);
         MockRecipeOutputExecutor target = new MockRecipeOutputExecutor();
         outputToken.mint(address(target), 10 ether);
         route.executor = address(target);
@@ -998,7 +995,7 @@ contract ReactorTest is Test {
     function testRecipeFillWithRealUpstreamExecutor() public {
         IRecipeExecutor recipe = RecipeRouteBuilder.deployReal(vm, address(executor));
         outputToken.mint(recipe.account(), 100 ether);
-        IRecipeRoute.RecipeRoute memory route = RecipeRouteBuilder.build(
+        RecipeRouteBuilder.Recipe memory route = RecipeRouteBuilder.build(
             MockRecipeExecutor(address(recipe)),
             address(rwa),
             address(outputToken),
@@ -1016,7 +1013,7 @@ contract ReactorTest is Test {
     function testRecipeFillForwardsProofBearingRuntimeToRealExecutor() public {
         IRecipeExecutor recipe = RecipeRouteBuilder.deployReal(vm, address(executor));
         outputToken.mint(recipe.account(), 100 ether);
-        IRecipeRoute.RecipeRoute memory route = RecipeRouteBuilder.buildManaged(
+        RecipeRouteBuilder.Recipe memory route = RecipeRouteBuilder.buildManaged(
             recipe, address(rwa), address(outputToken), address(executor), 10 ether, 10 ether
         );
         adapterFactory.setEntity(route.connector, true);
@@ -1028,7 +1025,7 @@ contract ReactorTest is Test {
     function testRealExecutorRejectsTamperedManagedActionAndRollsBack() public {
         IRecipeExecutor recipe = RecipeRouteBuilder.deployReal(vm, address(executor));
         outputToken.mint(recipe.account(), 100 ether);
-        IRecipeRoute.RecipeRoute memory route = RecipeRouteBuilder.buildManaged(
+        RecipeRouteBuilder.Recipe memory route = RecipeRouteBuilder.buildManaged(
             recipe, address(rwa), address(outputToken), address(executor), 10 ether, 10 ether
         );
         adapterFactory.setEntity(route.connector, true);
@@ -1046,7 +1043,7 @@ contract ReactorTest is Test {
     function testRealUpstreamExecutorRejectsChangedRecipeAndRollsBack() public {
         IRecipeExecutor recipe = RecipeRouteBuilder.deployReal(vm, address(executor));
         outputToken.mint(recipe.account(), 100 ether);
-        IRecipeRoute.RecipeRoute memory route = RecipeRouteBuilder.build(
+        RecipeRouteBuilder.Recipe memory route = RecipeRouteBuilder.build(
             MockRecipeExecutor(address(recipe)),
             address(rwa),
             address(outputToken),
@@ -1069,7 +1066,7 @@ contract ReactorTest is Test {
     function testRealUpstreamExecutorPausedCallerRollsBack() public {
         IRecipeExecutor recipe = RecipeRouteBuilder.deployReal(vm, address(executor));
         outputToken.mint(recipe.account(), 100 ether);
-        IRecipeRoute.RecipeRoute memory route = RecipeRouteBuilder.build(
+        RecipeRouteBuilder.Recipe memory route = RecipeRouteBuilder.build(
             MockRecipeExecutor(address(recipe)),
             address(rwa),
             address(outputToken),
@@ -1087,9 +1084,9 @@ contract ReactorTest is Test {
         assertFalse(reactor.isUsedNonce(swapper, order.request.nonce));
     }
 
-    function testFuzzRecipeFillFundsVersion1ConnectorAndSettles(uint96 rawAmount) public {
+    function testFuzzRecipeFillFundsVersion2ConnectorAndSettles(uint96 rawAmount) public {
         uint256 amount = bound(rawAmount, 1, 20 ether);
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(amount, amount);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(amount, amount);
         IReactor.Order memory order = _recipeOrder(amount, amount);
         _fillRecipes(order, _oneRecipe(route));
 
@@ -1106,7 +1103,7 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillCombinesDirectDiscountAndRecipeLegs() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(5 ether, 5 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(5 ether, 5 ether);
         outputToken.mint(address(executor), 5 ether);
         IReactor.SwapInput[] memory direct = new IReactor.SwapInput[](1);
         direct[0] = _swapInput(vault0, 3 ether, 3 ether);
@@ -1119,9 +1116,9 @@ contract ReactorTest is Test {
         executor.fill(
             order,
             signature,
-            direct,
+            _recipeInputs(direct, _oneRecipe(route)),
             discounted,
-            IExecutor.RecipeFill({routes: _oneRecipe(route), postCalls: new IExecutor.Call[](0)})
+            abi.encode(RecipeRouteBuilder.calls(_oneRecipe(route)))
         );
         assertEq(rwa.balanceOf(vault0Account), 3 ether);
         assertEq(rwa.balanceOf(vault1Account), 2 ether);
@@ -1130,9 +1127,9 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillExecutesMultipleBoundAccounts() public {
-        (IRecipeRoute.RecipeRoute memory first, MockRecipeExecutor firstRecipe) = _newRecipe(3 ether, 3 ether);
-        (IRecipeRoute.RecipeRoute memory second, MockRecipeExecutor secondRecipe) = _newRecipe(7 ether, 7 ether);
-        IRecipeRoute.RecipeRoute[] memory routes = new IRecipeRoute.RecipeRoute[](2);
+        (RecipeRouteBuilder.Recipe memory first, MockRecipeExecutor firstRecipe) = _newRecipe(3 ether, 3 ether);
+        (RecipeRouteBuilder.Recipe memory second, MockRecipeExecutor secondRecipe) = _newRecipe(7 ether, 7 ether);
+        RecipeRouteBuilder.Recipe[] memory routes = new RecipeRouteBuilder.Recipe[](2);
         routes[0] = first;
         routes[1] = second;
         _fillRecipes(_recipeOrder(10 ether, 10 ether), routes);
@@ -1142,7 +1139,7 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillRunsPostCallsAfterRecipes() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         IExecutor.Call[] memory calls = new IExecutor.Call[](1);
         calls[0] =
@@ -1153,9 +1150,9 @@ contract ReactorTest is Test {
         executor.fill(
             order,
             signature,
-            new IReactor.SwapInput[](0),
+            _recipeInputs(new IReactor.SwapInput[](0), _oneRecipe(route)),
             new IReactor.DiscountSwapInput[](0),
-            IExecutor.RecipeFill({routes: _oneRecipe(route), postCalls: calls})
+            _recipeCalls(_oneRecipe(route), calls)
         );
         assertEq(recipe.executions(), 1);
         assertEq(callTarget.lastValue(), 7);
@@ -1167,28 +1164,28 @@ contract ReactorTest is Test {
         allowed[1] = makeAddr("secondCaller");
         allowed[2] = filler;
         executor.setCallers(allowed);
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         _fillRecipes(_recipeOrder(10 ether, 10 ether), _oneRecipe(route));
         assertEq(recipe.executions(), 1);
         assertEq(outputToken.balanceOf(swapper), 10 ether);
     }
 
     function testRecipeFillRejectsUnauthorizedFiller() public {
-        (IRecipeRoute.RecipeRoute memory route,) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route,) = _newRecipe(10 ether, 10 ether);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         bytes memory signature = _signOrder(order);
         vm.expectRevert(IExecutor.NotCaller.selector);
         executor.fill(
             order,
             signature,
-            new IReactor.SwapInput[](0),
+            _recipeInputs(new IReactor.SwapInput[](0), _oneRecipe(route)),
             new IReactor.DiscountSwapInput[](0),
-            IExecutor.RecipeFill({routes: _oneRecipe(route), postCalls: new IExecutor.Call[](0)})
+            _recipeCalls(_oneRecipe(route), new IExecutor.Call[](0))
         );
     }
 
     function testRecipeFillRejectsConnectorOutsideFactory() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         adapterFactory.setEntity(route.connector, false);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         bytes memory signature = _signOrder(order);
@@ -1197,15 +1194,15 @@ contract ReactorTest is Test {
         executor.fill(
             order,
             signature,
-            new IReactor.SwapInput[](0),
+            _recipeInputs(new IReactor.SwapInput[](0), _oneRecipe(route)),
             new IReactor.DiscountSwapInput[](0),
-            IExecutor.RecipeFill({routes: _oneRecipe(route), postCalls: new IExecutor.Call[](0)})
+            _recipeCalls(_oneRecipe(route), new IExecutor.Call[](0))
         );
         _assertRecipeRollback(order, recipe);
     }
 
     function testRecipeFillRejectsWrongRecipeCallerAndRollsBack() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         recipe.setCaller(filler);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         vm.expectRevert(IRecipeExecutor.InvalidCaller.selector);
@@ -1214,7 +1211,7 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillRejectsChangedCommitmentAndRollsBack() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         route.queries = new bytes[](1);
         route.queries[0] = hex"1234";
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
@@ -1224,7 +1221,7 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillRejectsInputTotalMismatchBeforeTransfers() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(9 ether, 9 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(9 ether, 9 ether);
         IReactor.Order memory order = _recipeOrder(10 ether, 9 ether);
         vm.expectRevert(IReactor.InvalidAmountIn.selector);
         _fillRecipes(order, _oneRecipe(route));
@@ -1232,7 +1229,7 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillOutputShortfallRollsBackInputAndNonce() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 9 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 9 ether);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         vm.expectRevert(
             abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 9 ether, 10 ether)
@@ -1242,7 +1239,7 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillDoesNotReadAccountMetadata() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         address account = recipe.account();
         vm.mockCallRevert(address(recipe), abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
         vm.mockCallRevert(route.connector, abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
@@ -1253,7 +1250,7 @@ contract ReactorTest is Test {
     }
 
     function testRecipeFillPostCallFailureRollsBackRecipe() public {
-        (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         IExecutor.Call[] memory calls = new IExecutor.Call[](1);
         calls[0] = IExecutor.Call({
@@ -1266,9 +1263,9 @@ contract ReactorTest is Test {
         executor.fill(
             order,
             signature,
-            new IReactor.SwapInput[](0),
+            _recipeInputs(new IReactor.SwapInput[](0), _oneRecipe(route)),
             new IReactor.DiscountSwapInput[](0),
-            IExecutor.RecipeFill({routes: _oneRecipe(route), postCalls: calls})
+            _recipeCalls(_oneRecipe(route), calls)
         );
         _assertRecipeRollback(order, recipe);
     }
@@ -1276,7 +1273,7 @@ contract ReactorTest is Test {
     function testRecipeFillDeliversNativeOutput() public {
         MockRecipeExecutor recipe = new MockRecipeExecutor(address(executor));
         vm.deal(recipe.account(), 3 ether);
-        IRecipeRoute.RecipeRoute memory route =
+        RecipeRouteBuilder.Recipe memory route =
             RecipeRouteBuilder.build(recipe, address(rwa), NATIVE, address(executor), 10 ether, 2 ether);
         adapterFactory.setEntity(route.connector, true);
         IReactor.Output[] memory outputs = new IReactor.Output[](1);
@@ -1290,7 +1287,7 @@ contract ReactorTest is Test {
 
     function _newRecipe(uint256 amountIn, uint256 amountOut)
         internal
-        returns (IRecipeRoute.RecipeRoute memory route, MockRecipeExecutor recipe)
+        returns (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe)
     {
         recipe = new MockRecipeExecutor(address(executor));
         outputToken.mint(recipe.account(), 100 ether);
@@ -1306,25 +1303,60 @@ contract ReactorTest is Test {
         order = _order(outputs, amountIn);
     }
 
-    function _oneRecipe(IRecipeRoute.RecipeRoute memory route)
+    function _oneRecipe(RecipeRouteBuilder.Recipe memory route)
         internal
         pure
-        returns (IRecipeRoute.RecipeRoute[] memory routes)
+        returns (RecipeRouteBuilder.Recipe[] memory routes)
     {
-        routes = new IRecipeRoute.RecipeRoute[](1);
+        routes = new RecipeRouteBuilder.Recipe[](1);
         routes[0] = route;
     }
 
-    function _fillRecipes(IReactor.Order memory order, IRecipeRoute.RecipeRoute[] memory routes) internal {
+    function _fillRecipes(IReactor.Order memory order, RecipeRouteBuilder.Recipe[] memory routes) internal {
         bytes memory signature = _signOrder(order);
         vm.prank(filler);
         executor.fill(
             order,
             signature,
-            new IReactor.SwapInput[](0),
+            _recipeInputs(new IReactor.SwapInput[](0), routes),
             new IReactor.DiscountSwapInput[](0),
-            IExecutor.RecipeFill({routes: routes, postCalls: new IExecutor.Call[](0)})
+            abi.encode(RecipeRouteBuilder.calls(routes))
         );
+    }
+
+    function _recipeInputs(IReactor.SwapInput[] memory direct, RecipeRouteBuilder.Recipe[] memory recipes)
+        internal
+        view
+        returns (IReactor.SwapInput[] memory inputs)
+    {
+        inputs = new IReactor.SwapInput[](direct.length + recipes.length);
+        for (uint256 i; i < direct.length; ++i) {
+            inputs[i] = direct[i];
+        }
+        for (uint256 i; i < recipes.length; ++i) {
+            inputs[direct.length + i] = IReactor.SwapInput({
+                adapter: recipes[i].connector,
+                swap: ILiquidLaneAdapter.Swap({
+                    recipient: address(executor), tokenIn: address(rwa), amountIn: recipes[i].amountIn, amountOut: 0
+                })
+            });
+        }
+    }
+
+    function _recipeCalls(RecipeRouteBuilder.Recipe[] memory recipes, IExecutor.Call[] memory postCalls)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        IExecutor.Call[] memory recipeCalls = RecipeRouteBuilder.calls(recipes);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](recipeCalls.length + postCalls.length);
+        for (uint256 i; i < recipeCalls.length; ++i) {
+            calls[i] = recipeCalls[i];
+        }
+        for (uint256 i; i < postCalls.length; ++i) {
+            calls[recipeCalls.length + i] = postCalls[i];
+        }
+        return abi.encode(calls);
     }
 
     function _assertRecipeRollback(IReactor.Order memory order, MockRecipeExecutor recipe) internal view {
@@ -1696,14 +1728,6 @@ contract ReentrantNativeRecipient is IExecutor {
         IReactor.SwapInput[] calldata,
         IReactor.DiscountSwapInput[] calldata,
         bytes calldata
-    ) external {}
-
-    function fill(
-        IReactor.Order calldata,
-        bytes calldata,
-        IReactor.SwapInput[] calldata,
-        IReactor.DiscountSwapInput[] calldata,
-        RecipeFill calldata
     ) external {}
 
     function initialize(address, address[] calldata) external {}

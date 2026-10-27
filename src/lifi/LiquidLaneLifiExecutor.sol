@@ -2,13 +2,13 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
+import {IExecutor} from "src/interfaces/IExecutor.sol";
 import {IInputSettler} from "./interfaces/IInputSettler.sol";
 import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {ILiquidLaneLifiExecutor} from "./interfaces/ILiquidLaneLifiExecutor.sol";
 import {IOutputSettler} from "./interfaces/IOutputSettler.sol";
-import {IRecipeExecutor} from "src/interfaces/IRecipeExecutor.sol";
-import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
 
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -26,6 +26,7 @@ import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/Signa
 /// while ownership, the caller list, and the EIP-712 domain live in proxy storage set by {initialize}.
 contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgradeable, ILiquidLaneLifiExecutor {
     using SafeERC20 for IERC20;
+    using Address for address;
 
     /// @notice EIP-712 typehash wrapping a LI.FI registration message so signatures are domain-bound.
     bytes32 public constant LIFI_REGISTRATION_TYPEHASH = keccak256("LifiRegistration(bytes32 messageHash)");
@@ -78,7 +79,7 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         FillRoute[] calldata routes,
         DiscountRoute[] calldata discountRoutes
     ) external onlyCaller {
-        _finalise(order, routes, discountRoutes, new IRecipeRoute.RecipeRoute[](0));
+        _finalise(order, routes, discountRoutes, new IExecutor.Call[](0));
     }
 
     /// @inheritdoc ILiquidLaneLifiExecutor
@@ -86,9 +87,9 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         IInputSettler.StandardOrder calldata order,
         FillRoute[] calldata routes,
         DiscountRoute[] calldata discountRoutes,
-        IRecipeRoute.RecipeRoute[] calldata recipeRoutes
+        IExecutor.Call[] calldata calls
     ) external onlyCaller {
-        _finalise(order, routes, discountRoutes, recipeRoutes);
+        _finalise(order, routes, discountRoutes, calls);
     }
 
     /* IINPUTCALLBACK */
@@ -97,8 +98,8 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     function orderFinalised(uint256[2][] calldata inputs, bytes calldata executionData) external {
         if (INPUT_SETTLER != msg.sender) revert NotInputSettler();
 
-        (FillCall memory fillCall, IRecipeRoute.RecipeRoute[] memory recipeRoutes) =
-            abi.decode(executionData, (FillCall, IRecipeRoute.RecipeRoute[]));
+        (FillCall memory fillCall, IExecutor.Call[] memory calls) =
+            abi.decode(executionData, (FillCall, IExecutor.Call[]));
 
         // Adapters assume their input has already been transferred to them before the swap call.
         // forge-lint: disable-next-line(unsafe-typecast)
@@ -106,6 +107,7 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         for (uint256 i; i < fillCall.routes.length; ++i) {
             FillRoute memory route = fillCall.routes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            if (ILiquidLaneAdapter(route.adapter).version() != 1) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(
                     ILiquidLaneAdapter.Swap({
@@ -116,14 +118,13 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         for (uint256 i; i < fillCall.discountRoutes.length; ++i) {
             DiscountRoute memory route = fillCall.discountRoutes[i];
             IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
+            if (ILiquidLaneAdapter(route.adapter).version() != 1) continue;
             ILiquidLaneAdapter(route.adapter)
                 .swap(route.discountSwap, route.protocolSignature, address(this), route.amountIn);
         }
 
-        for (uint256 i; i < recipeRoutes.length; ++i) {
-            IRecipeRoute.RecipeRoute memory route = recipeRoutes[i];
-            IERC20(tokenIn).safeTransfer(route.connector, route.amountIn);
-            IRecipeExecutor(route.executor).execute(route.queries, route.steps, route.inputs, route.runtime);
+        for (uint256 i; i < calls.length; ++i) {
+            calls[i].target.functionCallWithValue(calls[i].data, calls[i].value);
         }
 
         // The output settler resolves the context-dependent amount it is owed and pulls it,
@@ -172,7 +173,7 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         IInputSettler.StandardOrder calldata order,
         FillRoute[] calldata routes,
         DiscountRoute[] calldata discountRoutes,
-        IRecipeRoute.RecipeRoute[] memory recipeRoutes
+        IExecutor.Call[] memory calls
     ) internal {
         FillCall memory fillCall;
         fillCall.orderId = IInputSettler(INPUT_SETTLER).orderIdentifier(order);
@@ -183,7 +184,7 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         bytes32 executorId = bytes32(uint256(uint160(address(this))));
         IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
         solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
-        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, abi.encode(fillCall, recipeRoutes));
+        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, abi.encode(fillCall, calls));
     }
 
     /// @dev Returns whether `caller` can invoke the finalise entrypoint.

@@ -4,8 +4,6 @@ pragma solidity ^0.8.0;
 
 import {IReactor} from "./IReactor.sol";
 
-import {IRecipeRoute} from "src/interfaces/IRecipeRoute.sol";
-
 /**
  * @title IExecutor
  * @notice Interface for caller-gated executor contracts used by the Reactor.
@@ -37,14 +35,6 @@ interface IExecutor {
         bytes data;
     }
 
-    /**
-     * @notice Recipe input routes followed by optional generic post-swap calls.
-     */
-    struct RecipeFill {
-        IRecipeRoute.RecipeRoute[] routes;
-        Call[] postCalls;
-    }
-
     /* EVENTS */
 
     /**
@@ -54,20 +44,6 @@ interface IExecutor {
     event SetCallers(address[] newCallers);
 
     /* FUNCTIONS */
-
-    /**
-     * @notice Fills an order using direct, discount and committed recipe input legs.
-     * @dev The Reactor funds registered adapters/connectors using the existing input legs.
-     * Connector actions run through the explicit recipe legs after adapter swaps and before postCalls.
-     * Direct, discount and recipe connector input amounts together must equal the signed input amount.
-     */
-    function fill(
-        IReactor.Order calldata order,
-        bytes calldata protocolSignature,
-        IReactor.SwapInput[] calldata swapInputs,
-        IReactor.DiscountSwapInput[] calldata discountSwapInputs,
-        RecipeFill calldata recipeFill
-    ) external;
 
     /**
      * @notice Initializes the proxy with its owner and allowed caller list.
@@ -87,8 +63,8 @@ interface IExecutor {
      * @notice Caller-gated entrypoint that forwards a fill into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInput Direct-caller adapter swap input.
-     * @param executorData Encoded executor payload.
+     * @param swapInput Permissioned adapter or connector input.
+     * @param executorData ABI-encoded Call[] executed after the swaps, including RecipeExecutor calls for connectors.
      */
     function fill(
         IReactor.Order calldata order,
@@ -101,8 +77,8 @@ interface IExecutor {
      * @notice Caller-gated entrypoint that forwards a multi-leg fill into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swap inputs.
-     * @param executorData Encoded executor payload.
+     * @param swapInputs Permissioned adapter or connector inputs.
+     * @param executorData ABI-encoded Call[] executed after the swaps, including RecipeExecutor calls for connectors.
      */
     function fill(
         IReactor.Order calldata order,
@@ -115,9 +91,9 @@ interface IExecutor {
      * @notice Caller-gated entrypoint that forwards direct and discount-backed legs into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swap inputs.
-     * @param discountSwapInputs Discount-backed adapter swap inputs.
-     * @param executorData Encoded executor payload.
+     * @param swapInputs Permissioned adapter or connector inputs.
+     * @param discountSwapInputs Discount-backed adapter or connector inputs.
+     * @param executorData ABI-encoded Call[] executed after the swaps, including RecipeExecutor calls for connectors.
      */
     function fill(
         IReactor.Order calldata order,
@@ -132,7 +108,7 @@ interface IExecutor {
      * @param order Protocol-authorized order.
      * @param swapInputs Direct adapter swap inputs selected for the fill.
      * @param discountSwapInputs Discount-backed adapter swap legs selected for the fill.
-     * @param executorData Encoded executor payload.
+     * @param executorData ABI-encoded Call[] executed after the swaps, including RecipeExecutor calls for connectors.
      */
     function execute(
         IReactor.Order calldata order,

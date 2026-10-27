@@ -31,34 +31,40 @@ This directory contains the core RFQ settlement contracts used by the Symbiotic 
 
 ## RecipeExecutor swaps
 
-All three executors accept additional `IRecipeRoute.RecipeRoute[]` input legs. Each route contains a RecipeExecutor address, a caller-selected input recipient in `connector`, `amountIn`, and the exact `queries`, `steps`, `inputs`, and `runtime` arguments of `IRecipeExecutor.execute`. The authorized caller chooses the funding recipient and program. Executors forward them without checking connector versions or account bindings; the RecipeExecutor, account, Reactor and settlers enforce their own rules. Initial caller and callback sender authorization remain required.
+Funding stays in the normal input arrays. Put permissioned adapter or connector
+amounts in `swapInputs`, and discounted amounts in `discountSwapInputs`. LI.FI
+and UniswapX use their corresponding `routes` and `discountRoutes` fields.
+The executors call the original swap methods for factory version `1` adapters.
+Version `2` connectors receive their input and execute through the subsequent
+`Call[]` loop: `RecipeExecutor → MerkleAccount → LiquidLaneConnector`.
 
-LiquidLaneConnector is created through `LiquidLaneConnectorFactory`. For native RFQ, deploy the Reactor with that factory as its membership registry. A Reactor configured with a different factory cannot admit these connectors. Before filling, the RecipeExecutor owner sets its `caller` to the RFQ, LI.FI or UniswapX executor and commits the intended recipe with `setRecipe`. The bound account needs the recipe's permissions and current Merkle proofs. The recipe performs approvals, connector swaps and any further conversion. Connector swaps are account-only: they return funded RWA input to the account and pay output assets from that account. Each RecipeExecutor has one caller; separate integrations require separate RecipeExecutors or an owner-approved caller change.
-
-The entrypoints are:
+Register the connector implementation as version `2` in the existing Liquid Lane
+adapter factory, after the version `1` adapter implementation. Create connectors
+with `create(2, owner, abi.encode(account, outputAsset))` and configure the Reactor
+with that shared factory. Factory versions are independent of the connector's
+EIP-712 domain version, which remains `1`.
 
 ```solidity
-// Native RFQ: existing direct inputs + existing discount inputs + recipe amounts
-// must equal order.request.amountIn. postCalls run after recipes.
-executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, recipeFill);
-// recipeFill is IExecutor.RecipeFill({routes: recipeRoutes, postCalls: postCalls}).
-
-// LI.FI: recipe inputs use the funds released after input settler fees.
-lifiExecutor.finaliseWithCurrentTimestamp(order, routes, discountRoutes, recipeRoutes);
-
-// UniswapX: recipe inputs use the funds supplied by the Reactor.
-uniswapXExecutor.execute(signedOrder, fillCall, recipeRoutes);
+// Each call holds target, value and ABI-encoded RecipeExecutor.execute calldata.
+executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
+lifiExecutor.finaliseWithCurrentTimestamp(order, routes, discountRoutes, calls);
+uniswapXExecutor.execute(signedOrder, fillCall, calls);
 ```
 
-The native RFQ Reactor and its interface are unchanged. The executor appends each recipe's connector and input amount to `SwapInput[]`; the Reactor checks factory membership, input tokens, signatures, deadlines, nonces, exact input totals and outputs. The callback carries the number of direct adapter legs separately from recipe funding legs. Only the direct adapter legs call the adapter swap method; recipes run next, followed by optional post-calls. Routing never depends on a contract's version number.
+Native RFQ forwards the input arrays and opaque `executorData` unchanged. Reactor
+checks factory membership, signatures, deadlines, nonces, exact input totals and
+outputs. LI.FI and UniswapX transfer the amounts from their route arrays before
+calling direct adapters or the generic calls. The caller chooses each recipe and
+its complete calldata; RFQ does not decode recipes, derive funding, or inspect
+account metadata. RecipeExecutor commitments, account permissions, connector
+checks and final settlement remain enforced by their contracts. A failed call
+or output shortfall reverts the entire fill.
 
-LI.FI and UniswapX transfer each recipe's `amountIn` to its selected connector, including zero amounts, then invoke RecipeExecutor directly. Direct and discount adapter routes always call their respective adapter swap methods. Supply connector funding through `recipeRoutes`, rather than through adapter routes. The committed program and account permissions determine the recipe's actions and discount terms.
-
-A failed recipe or output shortfall reverts the entire fill. LI.FI's output settler and UniswapX's Reactor continue to enforce their respective output amounts and preserve the existing retained-balance behavior. Unspent input and surplus output stay on the executor and can participate in later settlement; the allowed caller remains responsible for route amounts.
-
-Existing fill entrypoints and public LiquidLane route structs remain available. Native RFQ's public opaque payload is still an encoded `Call[]`; the fill wrappers convert it to the internal callback encoding `(uint256 directSwapCount, Call[])`. LI.FI and UniswapX encode callbacks as `(FillCall, RecipeRoute[])`, with an empty recipe array for ordinary fills. Proxy storage layouts are unchanged. Deploy or upgrade executor implementations separately from factory and account/recipe configuration.
-
-`IRecipeExecutor.sol` and its inherited recipe schema, `IRecipes.sol`, are copied from [symbioticfi/adapters at bd5e235](https://github.com/symbioticfi/adapters/tree/bd5e235899de5e175a0001a913d47596f6f4f801/src/interfaces/merkle-adapter). Only the local `IRecipes` import path is adjusted. No adapters implementation dependency is added to production contracts.
+The original native RFQ fill ABI and callback `Call[]` encoding remain unchanged.
+LI.FI and UniswapX callback data is `(FillCall, Call[])`, with an empty array for
+fills needing no additional calls. Proxy storage layouts are unchanged.
+The recipe interfaces and pinned upstream bytecode under `test/` are test fixtures;
+production contracts have no dependency on the recipe interpreter schema.
 
 ## Test Locally
 
@@ -71,7 +77,7 @@ forge fmt --check
 pre-commit run --all-files
 ```
 
-Recipe tests cover all three executors, mixed LiquidLane/recipe routes, multiple bound accounts, caller and callback authorization, caller-selected funding recipients, absent or reverting account/version metadata, exact recipe calldata, commitment rejection, output shortfall, native outputs, and atomic rollback. They also deploy pinned upstream RecipeExecutor bytecode and forward managed-action runtime data with Merkle proofs. See [fixture provenance and reproduction](test/fixtures/SOURCE.md) for the real-contract and mock boundaries. The optional mainnet and Sepolia fork suites require `ETH_RPC_URL` and `ETH_RPC_URL_SEPOLIA`, respectively.
+Recipe tests cover all three executors, mixed LiquidLane/recipe routes, multiple bound accounts, caller and callback authorization, caller-selected funding recipients, absent or reverting recipe/account metadata, version-1 adapters and version-2 connectors, exact recipe calldata, commitment rejection, output shortfall, native outputs, and atomic rollback. They also deploy pinned upstream RecipeExecutor bytecode and forward managed-action runtime data with Merkle proofs. See [fixture provenance and reproduction](test/fixtures/SOURCE.md) for the real-contract and mock boundaries. The optional mainnet and Sepolia fork suites require `ETH_RPC_URL` and `ETH_RPC_URL_SEPOLIA`, respectively.
 
 ## Files to know
 
