@@ -129,6 +129,10 @@ contract LifiExecutorForkTest is Test {
 }
 
 contract ForkMintingAdapter is ILiquidLaneAdapter {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
     ForkTestToken public immutable outputToken;
 
     constructor(ForkTestToken outputToken_) {

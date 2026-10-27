@@ -353,6 +353,10 @@ contract IntegrationAdapterFactory {
 }
 
 contract LiquidLaneAdapterMock is ILiquidLaneAdapter {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
     mapping(address token => address account) internal _accounts;
     uint256 public discountSwapCount;
     uint256 public signedSwapCount;

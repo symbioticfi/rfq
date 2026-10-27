@@ -63,8 +63,8 @@ interface IExecutor {
      * @notice Caller-gated entrypoint that forwards a fill into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInput Direct-caller adapter swap input.
-     * @param executorData Encoded executor payload.
+     * @param swapInput Permissioned adapter or connector input.
+     * @param executorData ABI-encoded Call[] executed after the swaps, including RecipeExecutor calls for connectors.
      */
     function fill(
         IReactor.Order calldata order,
@@ -77,8 +77,8 @@ interface IExecutor {
      * @notice Caller-gated entrypoint that forwards a multi-leg fill into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swap inputs.
-     * @param executorData Encoded executor payload.
+     * @param swapInputs Permissioned adapter or connector inputs.
+     * @param executorData ABI-encoded Call[] executed after the swaps, including RecipeExecutor calls for connectors.
      */
     function fill(
         IReactor.Order calldata order,
@@ -91,9 +91,9 @@ interface IExecutor {
      * @notice Caller-gated entrypoint that forwards direct and discount-backed legs into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swap inputs.
-     * @param discountSwapInputs Discount-backed adapter swap inputs.
-     * @param executorData Encoded executor payload.
+     * @param swapInputs Permissioned adapter or connector inputs.
+     * @param discountSwapInputs Discount-backed adapter or connector inputs.
+     * @param executorData ABI-encoded Call[] executed after the swaps, including RecipeExecutor calls for connectors.
      */
     function fill(
         IReactor.Order calldata order,
@@ -108,7 +108,7 @@ interface IExecutor {
      * @param order Protocol-authorized order.
      * @param swapInputs Direct adapter swap inputs selected for the fill.
      * @param discountSwapInputs Discount-backed adapter swap legs selected for the fill.
-     * @param executorData Encoded executor payload.
+     * @param executorData ABI-encoded Call[] executed after the swaps, including RecipeExecutor calls for connectors.
      */
     function execute(
         IReactor.Order calldata order,

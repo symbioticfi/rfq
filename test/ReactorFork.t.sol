@@ -268,6 +268,10 @@ contract ForkAdapterFactory {
 }
 
 contract ForkMockAdapter is ILiquidLaneAdapter {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
     mapping(address token => address account) internal _accounts;
 
     function setAccount(address vault, address token, address account) public {

@@ -8,9 +8,9 @@ import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title Executor
 /// @notice Caller-gated executor that forwards fills into Reactor and handles execution callbacks.
@@ -101,9 +101,12 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
         }
 
         for (uint256 i; i < swapInputs.length; ++i) {
-            ILiquidLaneAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
+            if (ILiquidLaneAdapter(swapInputs[i].adapter).version() == 1) {
+                ILiquidLaneAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
+            }
         }
         for (uint256 i; i < discountSwapInputs.length; ++i) {
+            if (ILiquidLaneAdapter(discountSwapInputs[i].adapter).version() != 1) continue;
             ILiquidLaneAdapter(discountSwapInputs[i].adapter)
                 .swap(
                     discountSwapInputs[i].discountSwap,
@@ -145,9 +148,7 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
     /// @dev Returns whether `caller` can invoke fill entrypoints.
     function _isCaller(address caller) internal view returns (bool) {
         for (uint256 i; i < callers.length; ++i) {
-            if (callers[i] == caller) {
-                return true;
-            }
+            if (callers[i] == caller) return true;
         }
         return false;
     }

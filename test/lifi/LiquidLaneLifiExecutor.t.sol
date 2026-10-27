@@ -2,6 +2,15 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
+import {IExecutor} from "src/interfaces/IExecutor.sol";
+import {IRecipeExecutor} from "test/interfaces/IRecipeExecutor.sol";
+import {
+    MockRecipeExecutor,
+    MockRecipeAccount,
+    MockRecipeOutputExecutor,
+    RecipeRouteBuilder
+} from "test/mocks/MockRecipeExecutor.sol";
+
 import {ILiquidLaneAdapter} from "../../src/interfaces/ILiquidLaneAdapter.sol";
 import {IInputCallback} from "../../src/lifi/interfaces/IInputCallback.sol";
 import {IInputSettler} from "../../src/lifi/interfaces/IInputSettler.sol";
@@ -514,6 +523,265 @@ contract LiquidLaneLifiExecutorTest is Test {
         return _order(amountIn, amountOut, address(outputToken));
     }
 
+    /* RECIPE ROUTES */
+
+    function testFinaliseRecipeDefersMismatchedFundingFailureToToken() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        address unfundedConnector = route.connector;
+        (RecipeRouteBuilder.Recipe memory other,) = _newRecipe(10 ether, 10 ether);
+        route.connector = other.connector;
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, unfundedConnector, 0, 10 ether)
+        );
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        _assertRecipeRollback(orderId, recipe);
+        assertEq(rwa.balanceOf(other.connector), 0);
+    }
+
+    function testFinaliseRecipeAcceptsInputRecipientAndRecipeWithoutMetadata() public {
+        (RecipeRouteBuilder.Recipe memory route,) = _newRecipe(10 ether, 10 ether);
+        MockRecipeOutputExecutor target = new MockRecipeOutputExecutor();
+        outputToken.mint(address(target), 10 ether);
+        route.executor = address(target);
+        route.runtime = new bytes[](1);
+        route.runtime[0] = abi.encode(address(outputToken), address(executor), 10 ether);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        assertEq(rwa.balanceOf(route.connector), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+        assertEq(target.executions(), 1);
+        assertEq(
+            target.lastCallHash(),
+            keccak256(
+                abi.encodeCall(IRecipeExecutor.execute, (route.queries, route.steps, route.inputs, route.runtime))
+            )
+        );
+    }
+
+    function testFinaliseRecipeDoesNotReadAccountMetadata() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        address account = recipe.account();
+        vm.mockCallRevert(address(recipe), abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        vm.mockCallRevert(route.connector, abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        assertEq(rwa.balanceOf(account), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+        assertEq(recipe.executions(), 1);
+    }
+
+    function testFinaliseWithRealUpstreamRecipeExecutor() public {
+        IRecipeExecutor recipe = RecipeRouteBuilder.deployReal(vm, address(executor));
+        outputToken.mint(recipe.account(), 100 ether);
+        RecipeRouteBuilder.Recipe memory route = RecipeRouteBuilder.buildManaged(
+            recipe, address(rwa), address(outputToken), address(executor), 10 ether, 10 ether
+        );
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+        assertTrue(outputSettler.attested());
+    }
+
+    function testFuzzFinaliseRecipeFundsVersion2ConnectorAndSettles(uint96 rawAmount) public {
+        uint256 amount = bound(rawAmount, 1, 20 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(amount, amount);
+        IInputSettler.StandardOrder memory order = _order(amount, amount);
+        bytes32 orderId = _openOrder(order);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        assertEq(rwa.balanceOf(address(recipe)), 0);
+        assertEq(rwa.balanceOf(recipe.account()), amount);
+        assertEq(rwa.balanceOf(route.connector), 0);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), amount);
+        assertEq(outputToken.balanceOf(recipient), amount);
+        assertEq(recipe.executions(), 1);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+        assertTrue(outputSettler.attested());
+    }
+
+    function testFinaliseRecipeUsesExplicitPermissionedConnectorInput() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        route.amountIn = 0;
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        _finaliseRecipes(order, _directRoutes(route.connector, 10 ether, 0), _noDiscountRoutes(), _oneRecipe(route));
+        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
+        assertEq(rwa.balanceOf(recipe.account()), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(recipe.executions(), 1);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+    }
+
+    function testFinaliseDiscountInputFundsConnectorAndRunsCall() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        ILiquidLaneLifiExecutor.DiscountRoute[] memory discounted = new ILiquidLaneLifiExecutor.DiscountRoute[](1);
+        discounted[0] = _discountRoute(route.connector, 10 ether, 123);
+        executor.finaliseWithCurrentTimestamp(
+            order, _noRoutes(), discounted, RecipeRouteBuilder.calls(_oneRecipe(route))
+        );
+        assertEq(rwa.balanceOf(recipe.account()), 10 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(recipe.executions(), 1);
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_CLAIMED);
+    }
+
+    function testFinaliseCombinesDirectDiscountAndRecipeRoutes() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(5 ether, 5 ether);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        _openOrder(order);
+        ILiquidLaneLifiExecutor.DiscountRoute[] memory discounted = new ILiquidLaneLifiExecutor.DiscountRoute[](1);
+        discounted[0] = _discountRoute(address(adapter), 2 ether, 0);
+        _finaliseRecipes(order, _directRoutes(address(adapter), 3 ether, 3 ether), discounted, _oneRecipe(route));
+        assertEq(rwa.balanceOf(address(adapter)), 5 ether);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 5 ether);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 1 ether);
+    }
+
+    function testFinaliseMultipleRecipeAccounts() public {
+        (RecipeRouteBuilder.Recipe memory first, MockRecipeExecutor firstRecipe) = _newRecipe(3 ether, 3 ether);
+        (RecipeRouteBuilder.Recipe memory second, MockRecipeExecutor secondRecipe) = _newRecipe(7 ether, 7 ether);
+        RecipeRouteBuilder.Recipe[] memory routes = new RecipeRouteBuilder.Recipe[](2);
+        routes[0] = first;
+        routes[1] = second;
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        _openOrder(order);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), routes);
+        assertEq(firstRecipe.executions(), 1);
+        assertEq(secondRecipe.executions(), 1);
+        assertEq(outputToken.balanceOf(recipient), 9 ether);
+    }
+
+    function testFinaliseRecipeUsesInputAfterSettlerFeeAndKeepsSurplus() public {
+        inputSettler.setInputFee(1 ether);
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(9 ether, 9 ether);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 8.5 ether);
+        _openOrder(order);
+        rwa.mint(address(executor), 5 ether);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        assertEq(rwa.balanceOf(address(inputSettler)), 1 ether);
+        assertEq(rwa.balanceOf(address(executor)), 5 ether);
+        assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 9 ether);
+        assertEq(outputToken.balanceOf(recipient), 8.5 ether);
+        assertEq(outputToken.balanceOf(address(executor)), 0.5 ether);
+    }
+
+    function testFinaliseRecipeRejectsUnauthorizedCaller() public {
+        (RecipeRouteBuilder.Recipe memory route,) = _newRecipe(10 ether, 10 ether);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        _openOrder(order);
+        vm.prank(makeAddr("intruder"));
+        vm.expectRevert(ILiquidLaneLifiExecutor.NotCaller.selector);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+    }
+
+    function testFinaliseRecipeCallerFailureRestoresClaimAndInput() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        recipe.setCaller(address(this));
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        vm.expectRevert(IRecipeExecutor.InvalidCaller.selector);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        _assertRecipeRollback(orderId, recipe);
+    }
+
+    function testFinaliseChangedRecipeRestoresClaimAndInput() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
+        route.queries = new bytes[](1);
+        route.queries[0] = hex"1234";
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        vm.expectRevert(IRecipeExecutor.InvalidRecipe.selector);
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        _assertRecipeRollback(orderId, recipe);
+    }
+
+    function testFinaliseRecipeOutputShortfallRestoresAllState() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 8 ether);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 8 ether, 9 ether)
+        );
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        _assertRecipeRollback(orderId, recipe);
+        assertEq(outputToken.allowance(address(executor), address(outputSettler)), 0);
+        assertFalse(outputSettler.attested());
+    }
+
+    function testFinaliseRecipeOverdrawRestoresClaimAndInput() public {
+        (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(11 ether, 11 ether);
+        IInputSettler.StandardOrder memory order = _order(10 ether, 9 ether);
+        bytes32 orderId = _openOrder(order);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 10 ether, 11 ether
+            )
+        );
+        _finaliseRecipes(order, _noRoutes(), _noDiscountRoutes(), _oneRecipe(route));
+        _assertRecipeRollback(orderId, recipe);
+    }
+
+    function _newRecipe(uint256 amountIn, uint256 amountOut)
+        internal
+        returns (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe)
+    {
+        recipe = new MockRecipeExecutor(address(executor));
+        outputToken.mint(recipe.account(), 100 ether);
+        route = RecipeRouteBuilder.build(
+            recipe, address(rwa), address(outputToken), address(executor), amountIn, amountOut
+        );
+    }
+
+    function _finaliseRecipes(
+        IInputSettler.StandardOrder memory order,
+        ILiquidLaneLifiExecutor.FillRoute[] memory direct,
+        ILiquidLaneLifiExecutor.DiscountRoute[] memory discounted,
+        RecipeRouteBuilder.Recipe[] memory recipes
+    ) internal {
+        ILiquidLaneLifiExecutor.FillRoute[] memory routes = new ILiquidLaneLifiExecutor
+            .FillRoute[](direct.length + recipes.length);
+        for (uint256 i; i < direct.length; ++i) {
+            routes[i] = direct[i];
+        }
+        for (uint256 i; i < recipes.length; ++i) {
+            routes[direct.length + i] = ILiquidLaneLifiExecutor.FillRoute({
+                adapter: recipes[i].connector, amountIn: recipes[i].amountIn, amountOut: 0
+            });
+        }
+        executor.finaliseWithCurrentTimestamp(order, routes, discounted, RecipeRouteBuilder.calls(recipes));
+    }
+
+    function _oneRecipe(RecipeRouteBuilder.Recipe memory route)
+        internal
+        pure
+        returns (RecipeRouteBuilder.Recipe[] memory routes)
+    {
+        routes = new RecipeRouteBuilder.Recipe[](1);
+        routes[0] = route;
+    }
+
+    function _assertRecipeRollback(bytes32 orderId, MockRecipeExecutor recipe) internal view {
+        assertEq(inputSettler.orderStatus(orderId), ORDER_STATUS_DEPOSITED);
+        assertEq(rwa.balanceOf(address(inputSettler)), 10 ether);
+        assertEq(rwa.balanceOf(address(executor)), 0);
+        assertEq(rwa.balanceOf(recipe.account()), 0);
+        assertEq(rwa.balanceOf(address(MockRecipeAccount(payable(recipe.account())).connector())), 0);
+        assertEq(outputToken.balanceOf(recipe.account()), 100 ether);
+        assertEq(recipe.executions(), 0);
+    }
+
     function _order(uint256 amountIn, uint256 amountOut, address tokenOut)
         internal
         view
@@ -736,7 +1004,8 @@ contract MockInputSettler is IInputSettler {
         orderStatus[orderId] = ORDER_STATUS_CLAIMED;
         IInputCallback(destinationAddress).orderFinalised(order.inputs, call);
 
-        ILiquidLaneLifiExecutor.FillCall memory fillCall = abi.decode(call, (ILiquidLaneLifiExecutor.FillCall));
+        (ILiquidLaneLifiExecutor.FillCall memory fillCall,) =
+            abi.decode(call, (ILiquidLaneLifiExecutor.FillCall, IExecutor.Call[]));
         require(fillCall.orderId == orderId, "order mismatch");
         require(MockOutputSettler(address(uint160(uint256(fillCall.output.settler)))).attested(), "not attested");
     }
@@ -916,6 +1185,10 @@ contract MockOutputSettler is IOutputSettler {
 }
 
 contract MockLifiAdapter is ILiquidLaneAdapter {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
     TestToken public immutable outputToken;
 
     constructor(TestToken outputToken_) {
