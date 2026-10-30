@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
@@ -188,12 +187,6 @@ def resolve_targets(path_args: Iterable[str]) -> List[Path]:
     return defaults or [Path("src")]
 
 
-def sort_from_stdin() -> None:
-    errors = sys.stdin.read()
-    sorted_errors = sorted(x.strip() for x in errors.splitlines())
-    print("\n".join(line for line in sorted_errors if line))
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Sort error declarations within Solidity files."
@@ -203,16 +196,7 @@ def main() -> int:
         nargs="*",
         help="Solidity files or directories to process.",
     )
-    parser.add_argument(
-        "--stdin",
-        action="store_true",
-        help="Read errors from stdin and output the sorted list (legacy helper).",
-    )
     args = parser.parse_args()
-
-    if args.stdin:
-        sort_from_stdin()
-        return 0
 
     targets = resolve_targets(args.paths)
 
