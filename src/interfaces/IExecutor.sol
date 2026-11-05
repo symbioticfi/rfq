@@ -60,40 +60,12 @@ interface IExecutor {
     function callers(uint256 index) external view returns (address caller);
 
     /**
-     * @notice Caller-gated entrypoint that forwards a fill into Reactor.
-     * @param order Protocol-authorized order.
-     * @param protocolSignature Protocol signature over the order.
-     * @param swapInput Direct-caller adapter swap input.
-     * @param executorData Encoded executor payload.
-     */
-    function fill(
-        IReactor.Order calldata order,
-        bytes calldata protocolSignature,
-        IReactor.SwapInput calldata swapInput,
-        bytes calldata executorData
-    ) external;
-
-    /**
-     * @notice Caller-gated entrypoint that forwards a multi-leg fill into Reactor.
-     * @param order Protocol-authorized order.
-     * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swap inputs.
-     * @param executorData Encoded executor payload.
-     */
-    function fill(
-        IReactor.Order calldata order,
-        bytes calldata protocolSignature,
-        IReactor.SwapInput[] calldata swapInputs,
-        bytes calldata executorData
-    ) external;
-
-    /**
      * @notice Caller-gated entrypoint that forwards direct and discount-backed legs into Reactor.
      * @param order Protocol-authorized order.
      * @param protocolSignature Protocol signature over the order.
-     * @param swapInputs Direct-caller adapter swap inputs.
-     * @param discountSwapInputs Discount-backed adapter swap inputs.
-     * @param executorData Encoded executor payload.
+     * @param swapInputs Permissioned adapter or connector inputs.
+     * @param discountSwapInputs Discount-backed adapter or connector inputs.
+     * @param executorData ABI-encoded Call[] containing all swaps, recipe executions and subsequent calls in order.
      */
     function fill(
         IReactor.Order calldata order,
@@ -104,11 +76,11 @@ interface IExecutor {
     ) external;
 
     /**
-     * @notice Executes routed calls for an authorized caller.
+     * @notice Executes the caller-supplied calls during the Reactor callback.
      * @param order Protocol-authorized order.
-     * @param swapInputs Direct adapter swap inputs selected for the fill.
-     * @param discountSwapInputs Discount-backed adapter swap legs selected for the fill.
-     * @param executorData Encoded executor payload.
+     * @param swapInputs Funding inputs forwarded by Reactor; execution is defined by executorData.
+     * @param discountSwapInputs Discount-backed funding inputs; execution is defined by executorData.
+     * @param executorData ABI-encoded Call[] containing all swaps, recipe executions and subsequent calls in order.
      */
     function execute(
         IReactor.Order calldata order,

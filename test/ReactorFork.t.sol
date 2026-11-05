@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Symbiotic
-pragma solidity 0.8.28;
+pragma solidity 0.8.38;
 
 import {Executor} from "../src/Executor.sol";
+import {ExecutorCalls} from "./utils/ExecutorCalls.sol";
 import {Reactor} from "../src/Reactor.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {ILiquidLaneAdapter} from "../src/interfaces/ILiquidLaneAdapter.sol";
@@ -72,7 +73,7 @@ contract ReactorMainnetForkTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
+        ExecutorCalls.fill(executor, order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
 
         assertEq(IERC20(DAI).balanceOf(vaultAccount), DAI_AMOUNT);
         assertEq(IERC20(USDC).balanceOf(swapper), USDC_AMOUNT);
@@ -86,11 +87,11 @@ contract ReactorMainnetForkTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
+        ExecutorCalls.fill(executor, order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
 
         vm.expectRevert(IReactor.NonceUsed.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
+        ExecutorCalls.fill(executor, order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
     }
 
     function testForkRejectsWrongProtocolSignatureAfterOutputMutation() public {
@@ -102,7 +103,7 @@ contract ReactorMainnetForkTest is Test {
 
         vm.expectRevert(IReactor.InvalidProtocolSignature.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
+        ExecutorCalls.fill(executor, order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
     }
 
     function testForkRejectsExpiredRequest() public {
@@ -114,7 +115,7 @@ contract ReactorMainnetForkTest is Test {
 
         vm.expectRevert(IReactor.ExpiredRequest.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
+        ExecutorCalls.fill(executor, order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
     }
 
     function testForkRejectsMissingReactorApproval() public {
@@ -127,7 +128,7 @@ contract ReactorMainnetForkTest is Test {
 
         vm.expectRevert();
         vm.prank(filler);
-        executor.fill(order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
+        ExecutorCalls.fill(executor, order, protocolSignature, _swap(DAI_AMOUNT), abi.encode(new IExecutor.Call[](0)));
     }
 
     function _singleUsdcOutput(uint256 amount) internal view returns (IReactor.Output[] memory outputs) {
@@ -268,6 +269,10 @@ contract ForkAdapterFactory {
 }
 
 contract ForkMockAdapter is ILiquidLaneAdapter {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
     mapping(address token => address account) internal _accounts;
 
     function setAccount(address vault, address token, address account) public {
