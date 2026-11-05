@@ -2,7 +2,7 @@
   "lib/core": {
     "branch": {
       "name": "delegator-simplify",
-      "rev": "3f0e820c1b5a529724b3d4c378db60dcf7e3e2f7"
+      "rev": "65d5226eee35de793c6af46e3ca1f75d1b36ba11"
     }
   },
   "lib/forge-std": {

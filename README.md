@@ -69,7 +69,7 @@ production contracts have no dependency on the recipe interpreter schema.
 
 ## Test Locally
 
-Use Foundry `v1.8.5`, Node.js from [.nvmrc](.nvmrc), pnpm `12.10.1`, Python `3.14.8`, and pre-commit `4.6.2`. Run commands from the repository root:
+Use Foundry `v1.9.0`, Node.js from [.nvmrc](.nvmrc), pnpm `12.16.1`, Python `3.15.2`, and pre-commit `4.7.0`. Run commands from the repository root:
 
 ```bash
 forge build
