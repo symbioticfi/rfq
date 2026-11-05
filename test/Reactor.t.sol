@@ -11,6 +11,7 @@ import {
 } from "test/mocks/MockRecipeExecutor.sol";
 
 import {Executor} from "../src/Executor.sol";
+import {ExecutorCalls} from "./utils/ExecutorCalls.sol";
 import {Reactor} from "../src/Reactor.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {ILiquidLaneAdapter} from "../src/interfaces/ILiquidLaneAdapter.sol";
@@ -87,7 +88,7 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 10 ether);
         assertEq(rwa.balanceOf(vault1Account), 0);
@@ -114,7 +115,7 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swapInputs, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swapInputs, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 4 ether);
         assertEq(rwa.balanceOf(vault1Account), 6 ether);
@@ -138,7 +139,7 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swapInputs, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swapInputs, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 4 ether);
         assertEq(rwa.balanceOf(vault1Account), 6 ether);
@@ -165,7 +166,7 @@ contract ReactorTest is Test {
             abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 4 ether, 5 ether)
         );
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(outputToken.balanceOf(swapper), 0);
@@ -184,7 +185,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidOutput.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(outputToken.balanceOf(swapper), 0);
@@ -206,7 +207,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidOutput.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(outputToken.balanceOf(swapper), 0);
@@ -228,7 +229,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidOutput.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(outputToken.balanceOf(swapper), 0);
@@ -250,7 +251,7 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 5 ether);
         assertEq(outputToken.balanceOf(swapper), 6 ether);
@@ -273,14 +274,14 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IExecutor.NotCaller.selector);
         vm.prank(filler);
-        lockedExecutor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(lockedExecutor, order, protocolSignature, swap, abi.encode(calls));
 
         lockedExecutor.setCallers(_callers(filler));
         vm.prank(swapper);
         rwa.approve(address(customReactor), type(uint256).max);
 
         vm.prank(filler);
-        lockedExecutor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(lockedExecutor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(outputToken.balanceOf(swapper), 5 ether);
         assertEq(rwa.balanceOf(vault0Account), 5 ether);
@@ -318,7 +319,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidFiller.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
     }
 
     function testFillTransfersNativeOutputs() public {
@@ -335,7 +336,7 @@ contract ReactorTest is Test {
         uint256 balanceBefore = swapper.balance;
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(swapper.balance, balanceBefore + 2 ether);
         assertEq(address(executor).balance, 0);
@@ -357,7 +358,7 @@ contract ReactorTest is Test {
         uint256 balanceBefore = swapper.balance;
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(swapper.balance, balanceBefore + 2 ether);
         assertEq(address(executor).balance, 1 ether);
@@ -396,7 +397,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(ReentrancyGuardTransient.ReentrancyGuardReentrantCall.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(address(recipient).balance, 0);
         assertEq(address(executor).balance, 3 ether);
@@ -419,7 +420,7 @@ contract ReactorTest is Test {
         emit IReactor.Fill(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
     }
 
     function testFillKeepsMaxApproval() public {
@@ -436,7 +437,7 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(approvalToken.allowance(address(executor), address(reactor)), type(uint256).max);
         assertEq(approvalToken.approveCalls(), 1);
@@ -446,7 +447,7 @@ contract ReactorTest is Test {
         protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(approvalToken.allowance(address(executor), address(reactor)), type(uint256).max);
         assertEq(approvalToken.approveCalls(), 1);
@@ -470,7 +471,7 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(firstToken.allowance(address(executor), address(reactor)), type(uint256).max);
         assertEq(secondToken.allowance(address(executor), address(reactor)), type(uint256).max);
@@ -496,10 +497,12 @@ contract ReactorTest is Test {
 
         vm.startPrank(filler);
         vm.expectRevert(IReactor.InvalidProtocolSignature.selector);
-        executor.fill(order, oldProtocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, oldProtocolSignature, swap, abi.encode(calls));
 
         order.swapperSignature = _signRequest(order.request);
-        executor.fill(order, _signOrder(order, reactor, NEW_PROTOCOL_PRIVATE_KEY), swap, abi.encode(calls));
+        ExecutorCalls.fill(
+            executor, order, _signOrder(order, reactor, NEW_PROTOCOL_PRIVATE_KEY), swap, abi.encode(calls)
+        );
         vm.stopPrank();
 
         assertEq(outputToken.balanceOf(swapper), 5 ether);
@@ -521,7 +524,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidProtocolSignature.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
     }
 
     function testFillRejectsInvalidSwapperRequestSignature() public {
@@ -535,7 +538,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidProtocolSignature.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
     }
 
     function testFillRevertsIfSwapperHasNotApprovedReactor() public {
@@ -553,7 +556,7 @@ contract ReactorTest is Test {
             abi.encodeWithSelector(IERC20Errors.ERC20InsufficientAllowance.selector, address(reactor), 0, 5 ether)
         );
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(adapter.swapCount(), 0);
@@ -573,7 +576,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.ExpiredRequest.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
     }
@@ -591,11 +594,11 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         vm.expectRevert(IReactor.NonceUsed.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(IReactor(address(reactor)).isUsedNonce(swapper, order.request.nonce), true);
         assertEq(rwa.balanceOf(vault0Account), 5 ether);
@@ -625,7 +628,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.NonceUsed.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(outputToken.balanceOf(swapper), 0);
@@ -643,7 +646,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidAmountIn.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swapInputs, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swapInputs, abi.encode(calls));
     }
 
     function testFillRevertsIfSwapInputTokenDoesNotMatchOrderTokenIn() public {
@@ -666,7 +669,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidTokenIn.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
     }
 
     function testFillRevertsIfSwapAdapterIsNotFactoryEntity() public {
@@ -681,7 +684,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidAdapter.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(address(unregisteredAdapter)), 0);
         assertEq(rwa.balanceOf(vault0Account), 0);
@@ -704,7 +707,7 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 4 ether);
         assertEq(rwa.balanceOf(vault1Account), 6 ether);
@@ -732,7 +735,7 @@ contract ReactorTest is Test {
         bytes memory protocolSignature = _signOrder(order);
 
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 4 ether);
         assertEq(rwa.balanceOf(vault1Account), 6 ether);
@@ -755,7 +758,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidAdapter.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
 
         assertEq(rwa.balanceOf(address(unregisteredAdapter)), 0);
         assertEq(rwa.balanceOf(vault0Account), 0);
@@ -776,7 +779,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidAmountIn.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
     }
 
     function testFillRevertsIfAllLegInputsDoNotMatchOrderAmountIn() public {
@@ -793,7 +796,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidAmountIn.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swapInputs, discountSwapInputs, abi.encode(calls));
     }
 
     function testFuzzFillRevertsIfSingleSwapAmountDoesNotMatchOrderAmount(uint96 orderAmount, uint96 swapAmount)
@@ -812,7 +815,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(IReactor.InvalidAmountIn.selector);
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
     }
 
     function testFillRevertsAndRollsBackIfExecutorDataIsMalformed() public {
@@ -827,7 +830,9 @@ contract ReactorTest is Test {
 
         vm.expectRevert();
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, hex"01");
+        IReactor.SwapInput[] memory inputs = new IReactor.SwapInput[](1);
+        inputs[0] = swap;
+        executor.fill(order, protocolSignature, inputs, new IReactor.DiscountSwapInput[](0), hex"01");
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(rwa.balanceOf(address(adapter)), 0);
@@ -851,7 +856,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert();
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(rwa.balanceOf(address(adapter)), 0);
@@ -875,7 +880,7 @@ contract ReactorTest is Test {
 
         vm.expectRevert(bytes("missing rwa"));
         vm.prank(filler);
-        executor.fill(order, protocolSignature, swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, protocolSignature, swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(vault0Account), 0);
         assertEq(rwa.balanceOf(address(adapter)), 0);
@@ -894,9 +899,12 @@ contract ReactorTest is Test {
     }
 
     function testExecuteRunsExecutorCalls() public {
-        IExecutor.Call[] memory calls = new IExecutor.Call[](1);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](2);
         calls[0] = IExecutor.Call({
             target: address(callTarget), value: 0, data: abi.encodeWithSelector(MockCallTarget.record.selector, 7)
+        });
+        calls[1] = IExecutor.Call({
+            target: address(callTarget), value: 0, data: abi.encodeWithSelector(MockCallTarget.record.selector, 9)
         });
 
         vm.prank(address(reactor));
@@ -907,8 +915,41 @@ contract ReactorTest is Test {
             abi.encode(calls)
         );
 
-        assertEq(callTarget.lastValue(), 7);
-        assertEq(callTarget.calls(), 1);
+        assertEq(callTarget.lastValue(), 9);
+        assertEq(callTarget.calls(), 2);
+    }
+
+    function testFillDoesNotInferCallsFromFundingInputs() public {
+        outputToken.mint(address(executor), 5 ether);
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        IReactor.SwapInput[] memory inputs = new IReactor.SwapInput[](1);
+        inputs[0] = _swapInput(vault0, 5 ether, 5 ether);
+        bytes memory signature = _signOrder(order);
+        vm.prank(filler);
+        executor.fill(
+            order, signature, inputs, new IReactor.DiscountSwapInput[](0), abi.encode(new IExecutor.Call[](0))
+        );
+        assertEq(adapter.swapCount(), 0);
+        assertEq(rwa.balanceOf(address(adapter)), 5 ether);
+        assertEq(outputToken.balanceOf(swapper), 5 ether);
+    }
+
+    function testFillRunsExplicitAdapterCallWithoutReadingVersion() public {
+        vm.mockCallRevert(address(adapter), abi.encodeWithSignature("version()"), "no version");
+        outputToken.mint(address(executor), 5 ether);
+        IReactor.Output[] memory outputs = new IReactor.Output[](1);
+        outputs[0] = IReactor.Output({token: address(outputToken), amount: 5 ether, recipient: swapper});
+        IReactor.Order memory order = _order(outputs, 5 ether);
+        bytes memory signature = _signOrder(order);
+        vm.prank(filler);
+        ExecutorCalls.fill(
+            executor, order, signature, _swapInput(vault0, 5 ether, 5 ether), abi.encode(new IExecutor.Call[](0))
+        );
+        assertEq(adapter.swapCount(), 1);
+        assertEq(rwa.balanceOf(vault0Account), 5 ether);
+        assertEq(outputToken.balanceOf(swapper), 5 ether);
     }
 
     /* RECIPE ROUTES */
@@ -1109,17 +1150,12 @@ contract ReactorTest is Test {
         direct[0] = _swapInput(vault0, 3 ether, 3 ether);
         IReactor.DiscountSwapInput[] memory discounted = new IReactor.DiscountSwapInput[](1);
         discounted[0] = _discountSwapInput(address(secondaryAdapter), vault1, 2 ether, 2 ether);
+        bytes memory data = ExecutorCalls.encode(direct, discounted, RecipeRouteBuilder.calls(_oneRecipe(route)));
         IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
         adapterFactory.setEntity(route.connector, true);
         bytes memory signature = _signOrder(order);
         vm.prank(filler);
-        executor.fill(
-            order,
-            signature,
-            _recipeInputs(direct, _oneRecipe(route)),
-            discounted,
-            abi.encode(RecipeRouteBuilder.calls(_oneRecipe(route)))
-        );
+        executor.fill(order, signature, _recipeInputs(direct, _oneRecipe(route)), discounted, data);
         assertEq(rwa.balanceOf(vault0Account), 3 ether);
         assertEq(rwa.balanceOf(vault1Account), 2 ether);
         assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 5 ether);
