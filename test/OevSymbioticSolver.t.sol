@@ -2,6 +2,11 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
+import {IRecipeExecutor} from "test/interfaces/IRecipeExecutor.sol";
+import {RecipeRouteBuilder, MockRecipeAccount} from "test/mocks/MockRecipeExecutor.sol";
+
+import {IExecutor} from "src/interfaces/IExecutor.sol";
+
 import {ILiquidLaneAdapter} from "../src/interfaces/ILiquidLaneAdapter.sol";
 import {SymbioticOevSolver} from "../src/oev/SymbioticOevSolver.sol";
 import {Id, IMorphoLiquidateCallback, MarketParams, Position} from "../src/oev/interfaces/IMorpho.sol";
@@ -387,13 +392,103 @@ contract OevSymbioticSolverTest is Test {
         );
     }
 
+    function testMerkleExitExecutesCommittedRecipeAndRepaysMorpho() public {
+        (SymbioticOevSolver.LiquidationLeg[] memory legs, IRecipeExecutor recipe) = _recipeLeg(100e18);
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, _opData(keccak256("recipe"), 0.1 ether, 1, legs));
+        assertEq(morpho.position(marketId, legs[0].borrower).collateral, 0);
+        assertEq(loan.balanceOf(address(solver)), 50e18);
+        assertEq(collateral.balanceOf(recipe.account()), 100e18);
+        assertEq(adapter.swapCalls(), 0);
+        uint256 beforeBalance = executor.balance;
+        vm.prank(executor);
+        solver.payBid(0.1 ether);
+        assertEq(executor.balance, beforeBalance + 0.1 ether);
+    }
+
+    function testMerkleExitInsufficientProceedsRollBackLegAndDoNotPayBid() public {
+        (SymbioticOevSolver.LiquidationLeg[] memory legs, IRecipeExecutor recipe) = _recipeLeg(49e18);
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, _opData(keccak256("shortfall"), 0.1 ether, 1, legs));
+        assertEq(morpho.position(marketId, legs[0].borrower).collateral, 100e18);
+        assertEq(collateral.balanceOf(recipe.account()), 0);
+        assertEq(loan.balanceOf(recipe.account()), 100e18);
+        uint256 beforeBalance = executor.balance;
+        vm.prank(executor);
+        solver.payBid(0.1 ether);
+        assertEq(executor.balance, beforeBalance);
+    }
+
+    function testMerkleExitProfitFloorRollsBackLeg() public {
+        (SymbioticOevSolver.LiquidationLeg[] memory legs, IRecipeExecutor recipe) = _recipeLeg(50e18);
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, _opData(keccak256("no-profit"), 0.1 ether, 1, legs));
+        assertEq(morpho.position(marketId, legs[0].borrower).collateral, 100e18);
+        assertEq(loan.balanceOf(recipe.account()), 100e18);
+    }
+
+    function testMerkleExitCallsAreBoundByAuthorization() public {
+        (SymbioticOevSolver.LiquidationLeg[] memory legs,) = _recipeLeg(100e18);
+        bytes memory opData = _opData(keccak256("bound"), 0.1 ether, 1, legs);
+        SymbioticOevSolver.OperationData memory op = abi.decode(opData, (SymbioticOevSolver.OperationData));
+        op.legs[0].calls[0].target = address(adapter);
+        vm.expectRevert(SymbioticOevSolver.InvalidAuth.selector);
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, abi.encode(op));
+    }
+
+    function testMerkleExitRecipientIsBoundByAuthorization() public {
+        (SymbioticOevSolver.LiquidationLeg[] memory legs,) = _recipeLeg(100e18);
+        bytes memory opData = _opData(keccak256("bound-recipient"), 0.1 ether, 1, legs);
+        SymbioticOevSolver.OperationData memory op = abi.decode(opData, (SymbioticOevSolver.OperationData));
+        op.legs[0].collateralRecipient = address(adapter);
+        vm.expectRevert(SymbioticOevSolver.InvalidAuth.selector);
+        vm.prank(executor);
+        solver.liquidate(0.1 ether, authSigner, abi.encode(op));
+    }
+
+    function testRejectsIncompleteGenericExit() public {
+        SymbioticOevSolver.LiquidationLeg[] memory legs = new SymbioticOevSolver.LiquidationLeg[](1);
+        legs[0] = _leg(makeAddr("borrower"), 100e18, 1);
+        legs[0].collateralRecipient = address(1);
+        bytes memory data = _opData(keccak256("incomplete"), 0.1 ether, 1, legs);
+        vm.prank(executor);
+        vm.expectRevert(SymbioticOevSolver.InvalidExit.selector);
+        solver.liquidate(0.1 ether, authSigner, data);
+    }
+
+    function _recipeLeg(uint256 outputAmount)
+        internal
+        returns (SymbioticOevSolver.LiquidationLeg[] memory legs, IRecipeExecutor recipe)
+    {
+        adapter.setMaxAssets(0); // A recipe exit must not depend on native adapter liquidity.
+        recipe = RecipeRouteBuilder.deployReal(vm, address(solver));
+        loan.mint(recipe.account(), 100e18);
+        RecipeRouteBuilder.Recipe memory route = RecipeRouteBuilder.buildManaged(
+            recipe, address(collateral), address(loan), address(solver), 100e18, outputAmount
+        );
+        address borrower = makeAddr("recipe-borrower");
+        _position(borrower, 100e18, 100e18);
+        legs = new SymbioticOevSolver.LiquidationLeg[](1);
+        legs[0] = _leg(borrower, 100e18, 1);
+        legs[0].collateralRecipient = route.connector;
+        RecipeRouteBuilder.Recipe[] memory routes = new RecipeRouteBuilder.Recipe[](1);
+        routes[0] = route;
+        legs[0].calls = RecipeRouteBuilder.calls(routes);
+    }
+
     function _leg(address borrower, uint256 maxSeizeAssets, uint256 minProfit)
         internal
         view
         returns (SymbioticOevSolver.LiquidationLeg memory)
     {
         return SymbioticOevSolver.LiquidationLeg({
-            marketId: marketId, borrower: borrower, maxSeizeAssets: maxSeizeAssets, minProfit: minProfit
+            marketId: marketId,
+            borrower: borrower,
+            maxSeizeAssets: maxSeizeAssets,
+            minProfit: minProfit,
+            collateralRecipient: address(0),
+            calls: new IExecutor.Call[](0)
         });
     }
 

@@ -4,7 +4,6 @@ pragma solidity 0.8.28;
 
 import {IExecutor} from "src/interfaces/IExecutor.sol";
 import {IInputSettler} from "./interfaces/IInputSettler.sol";
-import {ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
 import {ILiquidLaneLifiExecutor} from "./interfaces/ILiquidLaneLifiExecutor.sol";
 import {IOutputSettler} from "./interfaces/IOutputSettler.sol";
 
@@ -74,54 +73,28 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     }
 
     /// @inheritdoc ILiquidLaneLifiExecutor
-    function finaliseWithCurrentTimestamp(
-        IInputSettler.StandardOrder calldata order,
-        FillRoute[] calldata routes,
-        DiscountRoute[] calldata discountRoutes
-    ) external onlyCaller {
-        _finalise(order, routes, discountRoutes, new IExecutor.Call[](0));
-    }
-
-    /// @inheritdoc ILiquidLaneLifiExecutor
-    function finaliseWithCurrentTimestamp(
-        IInputSettler.StandardOrder calldata order,
-        FillRoute[] calldata routes,
-        DiscountRoute[] calldata discountRoutes,
-        IExecutor.Call[] calldata calls
-    ) external onlyCaller {
-        _finalise(order, routes, discountRoutes, calls);
+    function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, IExecutor.Call[] calldata calls)
+        external
+        onlyCaller
+    {
+        FillCall memory fillCall;
+        fillCall.orderId = IInputSettler(INPUT_SETTLER).orderIdentifier(order);
+        fillCall.output = order.outputs[0];
+        fillCall.fillDeadline = order.fillDeadline;
+        bytes32 executorId = bytes32(uint256(uint160(address(this))));
+        IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
+        solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
+        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, abi.encode(fillCall, calls));
     }
 
     /* IINPUTCALLBACK */
 
     /// @notice Called by the LI.FI input settler during finalise, after inputs are transferred here.
-    function orderFinalised(uint256[2][] calldata inputs, bytes calldata executionData) external {
+    function orderFinalised(uint256[2][] calldata, bytes calldata executionData) external {
         if (INPUT_SETTLER != msg.sender) revert NotInputSettler();
 
         (FillCall memory fillCall, IExecutor.Call[] memory calls) =
             abi.decode(executionData, (FillCall, IExecutor.Call[]));
-
-        // Adapters assume their input has already been transferred to them before the swap call.
-        // forge-lint: disable-next-line(unsafe-typecast)
-        address tokenIn = address(uint160(inputs[0][0]));
-        for (uint256 i; i < fillCall.routes.length; ++i) {
-            FillRoute memory route = fillCall.routes[i];
-            IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
-            if (ILiquidLaneAdapter(route.adapter).version() != 1) continue;
-            ILiquidLaneAdapter(route.adapter)
-                .swap(
-                    ILiquidLaneAdapter.Swap({
-                        recipient: address(this), tokenIn: tokenIn, amountIn: route.amountIn, amountOut: route.amountOut
-                    })
-                );
-        }
-        for (uint256 i; i < fillCall.discountRoutes.length; ++i) {
-            DiscountRoute memory route = fillCall.discountRoutes[i];
-            IERC20(tokenIn).safeTransfer(route.adapter, route.amountIn);
-            if (ILiquidLaneAdapter(route.adapter).version() != 1) continue;
-            ILiquidLaneAdapter(route.adapter)
-                .swap(route.discountSwap, route.protocolSignature, address(this), route.amountIn);
-        }
 
         for (uint256 i; i < calls.length; ++i) {
             calls[i].target.functionCallWithValue(calls[i].data, calls[i].value);
@@ -168,24 +141,6 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     }
 
     /* INTERNAL */
-
-    function _finalise(
-        IInputSettler.StandardOrder calldata order,
-        FillRoute[] calldata routes,
-        DiscountRoute[] calldata discountRoutes,
-        IExecutor.Call[] memory calls
-    ) internal {
-        FillCall memory fillCall;
-        fillCall.orderId = IInputSettler(INPUT_SETTLER).orderIdentifier(order);
-        fillCall.output = order.outputs[0];
-        fillCall.fillDeadline = order.fillDeadline;
-        fillCall.routes = routes;
-        fillCall.discountRoutes = discountRoutes;
-        bytes32 executorId = bytes32(uint256(uint160(address(this))));
-        IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
-        solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
-        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, abi.encode(fillCall, calls));
-    }
 
     /// @dev Returns whether `caller` can invoke the finalise entrypoint.
     function _isCaller(address caller) internal view returns (bool) {

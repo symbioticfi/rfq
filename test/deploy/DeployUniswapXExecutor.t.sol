@@ -4,6 +4,8 @@ pragma solidity 0.8.28;
 
 import {DeployUniswapXExecutorBaseScript} from "../../script/deploy/base/DeployUniswapXExecutorBase.s.sol";
 import {LiquidLaneUniswapXExecutor} from "../../src/uniswapx/LiquidLaneUniswapXExecutor.sol";
+import {IExecutor} from "src/interfaces/IExecutor.sol";
+
 import {ILiquidLaneUniswapXExecutor} from "../../src/uniswapx/interfaces/ILiquidLaneUniswapXExecutor.sol";
 import {IUniswapXReactor, UniswapXSignedOrder} from "../../src/uniswapx/interfaces/IUniswapXReactor.sol";
 
@@ -44,12 +46,8 @@ contract DeployUniswapXExecutorTest is Test {
         address proxyAdmin = address(uint160(uint256(vm.load(address(data.executor), ERC1967_ADMIN_SLOT))));
         assertEq(ProxyAdmin(proxyAdmin).owner(), proxyAdminOwner);
 
-        ILiquidLaneUniswapXExecutor.FillCall memory fillCall = ILiquidLaneUniswapXExecutor.FillCall({
-            routes: new ILiquidLaneUniswapXExecutor.FillRoute[](0),
-            discountRoutes: new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)
-        });
         vm.prank(caller);
-        data.executor.execute(UniswapXSignedOrder({order: bytes(""), sig: bytes("")}), fillCall);
+        data.executor.execute(UniswapXSignedOrder({order: bytes(""), sig: bytes("")}), new IExecutor.Call[](0));
         assertTrue(reactor.executeWithCallbackCalled());
         assertEq(reactor.executor(), address(data.executor));
 

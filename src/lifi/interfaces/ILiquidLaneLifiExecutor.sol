@@ -7,7 +7,6 @@ import {IInputSettler} from "./IInputSettler.sol";
 import {MandateOutput} from "./IOutputSettler.sol";
 
 import {IExecutor} from "src/interfaces/IExecutor.sol";
-import {ILiquidLaneAdapter} from "../../interfaces/ILiquidLaneAdapter.sol";
 
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
@@ -28,46 +27,11 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
 
     /* STRUCTS */
 
-    /**
-     * @notice One atomic direct-swap LiquidLane redemption leg.
-     * @param adapter LiquidLane adapter selected by the solver.
-     * @param amountIn Order-input amount routed to the adapter.
-     * @param amountOut Output amount requested from the adapter.
-     */
-    struct FillRoute {
-        address adapter;
-        uint256 amountIn;
-        uint256 amountOut;
-    }
-
-    /**
-     * @notice One atomic discount-backed LiquidLane redemption leg.
-     * @param adapter LiquidLane adapter selected by the solver.
-     * @param amountIn Order-input amount routed to the adapter.
-     * @param discountSwap Reusable signer policy plus the fresh protocol deadline.
-     * @param protocolSignature Fresh protocol cosign verified by the LiquidLane adapter.
-     */
-    struct DiscountRoute {
-        address adapter;
-        uint256 amountIn;
-        ILiquidLaneAdapter.DiscountSwap discountSwap;
-        bytes protocolSignature;
-    }
-
-    /**
-     * @notice Callback payload constructed by `finaliseWithCurrentTimestamp` from the order itself.
-     * @param orderId OIF order id.
-     * @param output Single output to fill and attest.
-     * @param fillDeadline Fill deadline carried by the order.
-     * @param routes Direct-swap LiquidLane legs selected by the solver.
-     * @param discountRoutes Discount-backed LiquidLane legs selected by the solver.
-     */
+    /// @notice Order data needed by the settlement callback.
     struct FillCall {
         bytes32 orderId;
         MandateOutput output;
         uint32 fillDeadline;
-        FillRoute[] routes;
-        DiscountRoute[] discountRoutes;
     }
 
     /* FUNCTIONS */
@@ -76,22 +40,9 @@ interface ILiquidLaneLifiExecutor is IInputCallback, IERC1271 {
     function OUTPUT_SETTLER() external view returns (address outputSettler);
     function callers(uint256 index) external view returns (address caller);
     function initialize(address owner, address[] calldata initCallers) external;
-    function finaliseWithCurrentTimestamp(
-        IInputSettler.StandardOrder calldata order,
-        FillRoute[] calldata routes,
-        DiscountRoute[] calldata discountRoutes
-    ) external;
-    /**
-     * @notice Finalises using direct, discount and calls, including RecipeExecutor executions.
-     * @dev The authorized caller selects recipe input recipients and amounts using the input
-     * released after settler fees. The output settler resolves and enforces output.
-     */
-    function finaliseWithCurrentTimestamp(
-        IInputSettler.StandardOrder calldata order,
-        FillRoute[] calldata routes,
-        DiscountRoute[] calldata discountRoutes,
-        IExecutor.Call[] calldata calls
-    ) external;
+    /// @notice Executes caller-supplied calls after receiving inputs, then settles the order output.
+    function finaliseWithCurrentTimestamp(IInputSettler.StandardOrder calldata order, IExecutor.Call[] calldata calls)
+        external;
     function isCaller(address caller) external view returns (bool allowed);
     function lifiRegistrationDigest(bytes32 messageHash) external view returns (bytes32 digest);
     function setCallers(address[] calldata newCallers) external;

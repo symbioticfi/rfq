@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
+import {SwapCalls} from "test/utils/SwapCalls.sol";
+
 import {IExecutor} from "src/interfaces/IExecutor.sol";
 import {IRecipeExecutor} from "test/interfaces/IRecipeExecutor.sol";
 import {
@@ -86,7 +88,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
     function testExecuteRejectsOwnerWhenOwnerIsNotCaller() public {
         vm.prank(owner);
         vm.expectRevert(ILiquidLaneUniswapXExecutor.NotCaller.selector);
-        executor.execute(_signedOrder(), _emptyFillCall());
+        _execute(_signedOrder(), _emptyPlan());
     }
 
     function testSetCallersAllowsNewCallerAndRevokesOldCaller() public {
@@ -97,10 +99,10 @@ contract LiquidLaneUniswapXExecutorTest is Test {
 
         vm.prank(caller);
         vm.expectRevert(ILiquidLaneUniswapXExecutor.NotCaller.selector);
-        executor.execute(_signedOrder(), _emptyFillCall());
+        _execute(_signedOrder(), _emptyPlan());
 
         vm.prank(newCaller);
-        executor.execute(_signedOrder(), _emptyFillCall());
+        _execute(_signedOrder(), _emptyPlan());
     }
 
     function testSetCallersRejectsNonOwner() public {
@@ -113,7 +115,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         UniswapXResolvedOrder[] memory orders =
             _resolvedOrders(_resolvedOrder(10 ether, _erc20Outputs(address(outputToken), 9 ether, recipient)));
         vm.expectRevert(ILiquidLaneUniswapXExecutor.NotReactor.selector);
-        executor.reactorCallback(orders, abi.encode(_emptyFillCall()));
+        executor.reactorCallback(orders, abi.encode(_emptyPlan()));
     }
 
     function testReactorCallbackRejectsMalformedData() public {
@@ -126,12 +128,12 @@ contract LiquidLaneUniswapXExecutorTest is Test {
 
     function testExecuteRoutesDirectFillAndKeepsInputAndOutputSurplus() public {
         adapter.setDirectOutput(10 ether);
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        SwapCalls.Direct[] memory routes = new SwapCalls.Direct[](1);
         routes[0] = _directRoute(address(adapter), 9 ether, 10 ether);
         reactor.setOrder(_resolvedOrder(10 ether, _erc20Outputs(address(outputToken), 9 ether, recipient)));
 
         vm.prank(caller);
-        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+        _execute(_signedOrder(), _plan(routes, new SwapCalls.Discounted[](0)));
 
         assertEq(inputToken.balanceOf(address(executor)), 1 ether);
         assertEq(outputToken.balanceOf(address(executor)), 1 ether);
@@ -152,11 +154,11 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         outputs[1] = UniswapXOutputToken({token: address(secondOutput), amount: 5 ether, recipient: secondRecipient});
         reactor.setOrder(_resolvedOrder(10 ether, outputs));
 
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](2);
+        SwapCalls.Direct[] memory routes = new SwapCalls.Direct[](2);
         routes[0] = _directRoute(address(adapter), 4 ether, 4 ether);
         routes[1] = _directRoute(address(secondAdapter), 6 ether, 6 ether);
         vm.prank(caller);
-        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+        _execute(_signedOrder(), _plan(routes, new SwapCalls.Discounted[](0)));
 
         assertEq(outputToken.balanceOf(recipient), 4 ether);
         assertEq(secondOutput.balanceOf(secondRecipient), 5 ether);
@@ -168,12 +170,11 @@ contract LiquidLaneUniswapXExecutorTest is Test {
 
     function testExecuteRoutesDiscountFill() public {
         adapter.setDiscountOutput(9 ether);
-        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory discountRoutes =
-            new ILiquidLaneUniswapXExecutor.DiscountRoute[](1);
+        SwapCalls.Discounted[] memory discountRoutes = new SwapCalls.Discounted[](1);
         discountRoutes[0] = _discountRoute(address(adapter), 10 ether);
 
         vm.prank(caller);
-        executor.execute(_signedOrder(), _fillCall(new ILiquidLaneUniswapXExecutor.FillRoute[](0), discountRoutes));
+        _execute(_signedOrder(), _plan(new SwapCalls.Direct[](0), discountRoutes));
 
         assertEq(adapter.discountCalls(), 1);
         assertEq(inputToken.balanceOf(address(adapter)), 10 ether);
@@ -187,13 +188,12 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         outputToken.mint(address(discountAdapter), 6 ether);
         reactor.setOrder(_resolvedOrder(10 ether, _erc20Outputs(address(outputToken), 10 ether, recipient)));
 
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        SwapCalls.Direct[] memory routes = new SwapCalls.Direct[](1);
         routes[0] = _directRoute(address(adapter), 4 ether, 4 ether);
-        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory discountRoutes =
-            new ILiquidLaneUniswapXExecutor.DiscountRoute[](1);
+        SwapCalls.Discounted[] memory discountRoutes = new SwapCalls.Discounted[](1);
         discountRoutes[0] = _discountRoute(address(discountAdapter), 6 ether);
         vm.prank(caller);
-        executor.execute(_signedOrder(), _fillCall(routes, discountRoutes));
+        _execute(_signedOrder(), _plan(routes, discountRoutes));
 
         assertEq(adapter.directCalls(), 1);
         assertEq(discountAdapter.discountCalls(), 1);
@@ -208,12 +208,12 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         countingOutput.mint(address(countingAdapter), 18 ether);
         inputToken.mint(address(reactor), 10 ether);
         reactor.setOrder(_resolvedOrder(10 ether, _erc20Outputs(address(countingOutput), 9 ether, recipient)));
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        SwapCalls.Direct[] memory routes = new SwapCalls.Direct[](1);
         routes[0] = _directRoute(address(countingAdapter), 10 ether, 9 ether);
 
         vm.startPrank(caller);
-        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
-        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+        _execute(_signedOrder(), _plan(routes, new SwapCalls.Discounted[](0)));
+        _execute(_signedOrder(), _plan(routes, new SwapCalls.Discounted[](0)));
         vm.stopPrank();
 
         assertEq(countingOutput.allowance(address(executor), address(reactor)), type(uint256).max);
@@ -223,14 +223,14 @@ contract LiquidLaneUniswapXExecutorTest is Test {
     function testExecuteForwardsNativeOutputAndReceivesReactorRefund() public {
         MockUniswapXAdapter nativeAdapter = new MockUniswapXAdapter(address(0));
         reactor.setOrder(_resolvedOrder(10 ether, _nativeOutputs(2 ether, recipient)));
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        SwapCalls.Direct[] memory routes = new SwapCalls.Direct[](1);
         routes[0] = _directRoute(address(nativeAdapter), 10 ether, 0);
         vm.deal(address(this), 3 ether);
         payable(address(executor)).sendValue(3 ether);
         uint256 recipientBalanceBefore = recipient.balance;
 
         vm.prank(caller);
-        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+        _execute(_signedOrder(), _plan(routes, new SwapCalls.Discounted[](0)));
 
         assertEq(recipient.balance, recipientBalanceBefore + 2 ether);
         assertEq(address(executor).balance, 1 ether);
@@ -239,12 +239,12 @@ contract LiquidLaneUniswapXExecutorTest is Test {
 
     function testExecuteBubblesAdapterRevertAndRollsBack() public {
         adapter.setShouldRevert(true);
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        SwapCalls.Direct[] memory routes = new SwapCalls.Direct[](1);
         routes[0] = _directRoute(address(adapter), 10 ether, 9 ether);
 
         vm.prank(caller);
         vm.expectRevert(MockUniswapXAdapter.AdapterFailed.selector);
-        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+        _execute(_signedOrder(), _plan(routes, new SwapCalls.Discounted[](0)));
 
         assertEq(inputToken.balanceOf(address(reactor)), 10 ether);
         assertEq(inputToken.balanceOf(address(adapter)), 0);
@@ -254,14 +254,14 @@ contract LiquidLaneUniswapXExecutorTest is Test {
 
     function testExecuteBubblesReactorOutputShortfallAndRollsBack() public {
         adapter.setDirectOutput(8 ether);
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        SwapCalls.Direct[] memory routes = new SwapCalls.Direct[](1);
         routes[0] = _directRoute(address(adapter), 10 ether, 9 ether);
 
         vm.prank(caller);
         vm.expectRevert(
             abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 8 ether, 9 ether)
         );
-        executor.execute(_signedOrder(), _fillCall(routes, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)));
+        _execute(_signedOrder(), _plan(routes, new SwapCalls.Discounted[](0)));
 
         assertEq(inputToken.balanceOf(address(reactor)), 10 ether);
         assertEq(inputToken.balanceOf(address(adapter)), 0);
@@ -280,7 +280,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, unfundedConnector, 0, 10 ether)
         );
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         _assertRecipeRollback(recipe);
         assertEq(inputToken.balanceOf(other.connector), 0);
     }
@@ -293,7 +293,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         route.runtime = new bytes[](1);
         route.runtime[0] = abi.encode(address(outputToken), address(executor), 10 ether);
         vm.prank(caller);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         assertEq(inputToken.balanceOf(route.connector), 10 ether);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
         assertEq(outputToken.balanceOf(address(executor)), 1 ether);
@@ -312,7 +312,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         vm.mockCallRevert(address(recipe), abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
         vm.mockCallRevert(route.connector, abi.encodeWithSelector(IRecipeExecutor.account.selector), hex"feed");
         vm.prank(caller);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         assertEq(inputToken.balanceOf(account), 10 ether);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
         assertEq(recipe.executions(), 1);
@@ -325,7 +325,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
             recipe, address(inputToken), address(outputToken), address(executor), 10 ether, 10 ether
         );
         vm.prank(caller);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         assertEq(outputToken.balanceOf(recipient), 9 ether);
         assertEq(outputToken.balanceOf(address(executor)), 1 ether);
         assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
@@ -337,7 +337,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         reactor.setOrder(_resolvedOrder(amount, _erc20Outputs(address(outputToken), amount, recipient)));
         (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(amount, amount);
         vm.prank(caller);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), amount);
         assertEq(inputToken.balanceOf(address(recipe)), 0);
         assertEq(inputToken.balanceOf(recipe.account()), amount);
@@ -348,28 +348,21 @@ contract LiquidLaneUniswapXExecutorTest is Test {
 
     function testExecuteRecipeUsesExplicitPermissionedConnectorInput() public {
         (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
-        route.amountIn = 0;
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory direct = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
-        direct[0] = _directRoute(route.connector, 10 ether, 0);
+        IExecutor.Call[] memory calls = new IExecutor.Call[](2);
+        calls[0] = SwapCalls.transfer(address(inputToken), route.connector, 10 ether);
+        calls[1] = RecipeRouteBuilder.calls(_oneRecipe(route))[0];
         vm.prank(caller);
-        _executeRecipes(
-            _signedOrder(), _fillCall(direct, new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)), _oneRecipe(route)
-        );
+        executor.execute(_signedOrder(), calls);
         assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
         assertEq(inputToken.balanceOf(recipe.account()), 10 ether);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
         assertEq(recipe.executions(), 1);
     }
 
-    function testExecuteDiscountInputFundsConnectorAndRunsCall() public {
+    function testExecuteFundingCallRunsRecipe() public {
         (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
-        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory discounted =
-            new ILiquidLaneUniswapXExecutor.DiscountRoute[](1);
-        discounted[0] = _discountRoute(route.connector, 10 ether);
-        ILiquidLaneUniswapXExecutor.FillCall memory fillCall =
-            _fillCall(new ILiquidLaneUniswapXExecutor.FillRoute[](0), discounted);
         vm.prank(caller);
-        executor.execute(_signedOrder(), fillCall, RecipeRouteBuilder.calls(_oneRecipe(route)));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         assertEq(inputToken.balanceOf(recipe.account()), 10 ether);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
         assertEq(recipe.executions(), 1);
@@ -379,13 +372,12 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         adapter.setDirectOutput(3 ether);
         adapter.setDiscountOutput(2 ether);
         (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(5 ether, 5 ether);
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory direct = new ILiquidLaneUniswapXExecutor.FillRoute[](1);
+        SwapCalls.Direct[] memory direct = new SwapCalls.Direct[](1);
         direct[0] = _directRoute(address(adapter), 3 ether, 3 ether);
-        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory discounted =
-            new ILiquidLaneUniswapXExecutor.DiscountRoute[](1);
+        SwapCalls.Discounted[] memory discounted = new SwapCalls.Discounted[](1);
         discounted[0] = _discountRoute(address(adapter), 2 ether);
         vm.prank(caller);
-        _executeRecipes(_signedOrder(), _fillCall(direct, discounted), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _plan(direct, discounted), _oneRecipe(route));
         assertEq(inputToken.balanceOf(address(adapter)), 5 ether);
         assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 5 ether);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
@@ -399,7 +391,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         routes[1] = second;
         inputToken.mint(address(executor), 5 ether);
         vm.prank(caller);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), routes);
+        _executeRecipes(_signedOrder(), _emptyPlan(), routes);
         assertEq(firstRecipe.executions(), 1);
         assertEq(secondRecipe.executions(), 1);
         assertEq(inputToken.balanceOf(address(executor)), 5 ether);
@@ -416,7 +408,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         executor.setCallers(allowed);
         (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         vm.prank(caller);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         assertEq(recipe.executions(), 1);
         assertEq(outputToken.balanceOf(recipient), 9 ether);
     }
@@ -427,7 +419,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         (RecipeRouteBuilder.Recipe memory route, MockRecipeExecutor recipe) = _newRecipe(10 ether, 10 ether);
         vm.prank(caller);
         vm.expectRevert(ILiquidLaneUniswapXExecutor.NotCaller.selector);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         _assertRecipeRollback(recipe);
     }
 
@@ -435,7 +427,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         (RecipeRouteBuilder.Recipe memory route,) = _newRecipe(10 ether, 10 ether);
         vm.prank(makeAddr("intruder"));
         vm.expectRevert(ILiquidLaneUniswapXExecutor.NotCaller.selector);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
     }
 
     function testExecuteRecipeWrongCallerRollsBack() public {
@@ -443,7 +435,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         recipe.setCaller(caller);
         vm.prank(caller);
         vm.expectRevert(IRecipeExecutor.InvalidCaller.selector);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         _assertRecipeRollback(recipe);
     }
 
@@ -453,7 +445,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         route.queries[0] = hex"1234";
         vm.prank(caller);
         vm.expectRevert(IRecipeExecutor.InvalidRecipe.selector);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         _assertRecipeRollback(recipe);
     }
 
@@ -463,7 +455,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 8 ether, 9 ether)
         );
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         _assertRecipeRollback(recipe);
         assertEq(outputToken.allowance(address(executor), address(reactor)), 0);
     }
@@ -476,7 +468,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
                 IERC20Errors.ERC20InsufficientBalance.selector, address(executor), 10 ether, 11 ether
             )
         );
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         _assertRecipeRollback(recipe);
     }
 
@@ -488,7 +480,7 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         reactor.setOrder(_resolvedOrder(10 ether, _nativeOutputs(2 ether, recipient)));
         uint256 beforeBalance = recipient.balance;
         vm.prank(caller);
-        _executeRecipes(_signedOrder(), _emptyFillCall(), _oneRecipe(route));
+        _executeRecipes(_signedOrder(), _emptyPlan(), _oneRecipe(route));
         assertEq(recipient.balance, beforeBalance + 2 ether);
         assertEq(recipe.account().balance, 1 ether);
     }
@@ -504,23 +496,24 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         );
     }
 
+    function _execute(UniswapXSignedOrder memory order, SwapCalls.Plan memory plan) internal {
+        executor.execute(order, SwapCalls.build(address(inputToken), address(executor), plan, new IExecutor.Call[](0)));
+    }
+
     function _executeRecipes(
         UniswapXSignedOrder memory order,
-        ILiquidLaneUniswapXExecutor.FillCall memory fillCall,
+        SwapCalls.Plan memory fillCall,
         RecipeRouteBuilder.Recipe[] memory recipes
     ) internal {
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes = new ILiquidLaneUniswapXExecutor
-            .FillRoute[](fillCall.routes.length + recipes.length);
-        for (uint256 i; i < fillCall.routes.length; ++i) {
-            routes[i] = fillCall.routes[i];
-        }
+        IExecutor.Call[] memory recipeCalls = RecipeRouteBuilder.calls(recipes);
+        IExecutor.Call[] memory extra = new IExecutor.Call[](recipes.length + recipeCalls.length);
         for (uint256 i; i < recipes.length; ++i) {
-            routes[fillCall.routes.length + i] = ILiquidLaneUniswapXExecutor.FillRoute({
-                adapter: recipes[i].connector, amountIn: recipes[i].amountIn, amountOut: 0
-            });
+            extra[i] = SwapCalls.transfer(address(inputToken), recipes[i].connector, recipes[i].amountIn);
         }
-        fillCall.routes = routes;
-        executor.execute(order, fillCall, RecipeRouteBuilder.calls(recipes));
+        for (uint256 i; i < recipeCalls.length; ++i) {
+            extra[recipes.length + i] = recipeCalls[i];
+        }
+        executor.execute(order, SwapCalls.build(address(inputToken), address(executor), fillCall, extra));
     }
 
     function _oneRecipe(RecipeRouteBuilder.Recipe memory route)
@@ -601,33 +594,32 @@ contract LiquidLaneUniswapXExecutorTest is Test {
         callers_[0] = caller_;
     }
 
-    function _emptyFillCall() internal pure returns (ILiquidLaneUniswapXExecutor.FillCall memory fillCall) {
-        fillCall = _fillCall(
-            new ILiquidLaneUniswapXExecutor.FillRoute[](0), new ILiquidLaneUniswapXExecutor.DiscountRoute[](0)
-        );
+    function _emptyPlan() internal pure returns (SwapCalls.Plan memory fillCall) {
+        fillCall = _plan(new SwapCalls.Direct[](0), new SwapCalls.Discounted[](0));
     }
 
-    function _fillCall(
-        ILiquidLaneUniswapXExecutor.FillRoute[] memory routes,
-        ILiquidLaneUniswapXExecutor.DiscountRoute[] memory discountRoutes
-    ) internal pure returns (ILiquidLaneUniswapXExecutor.FillCall memory fillCall) {
-        fillCall = ILiquidLaneUniswapXExecutor.FillCall({routes: routes, discountRoutes: discountRoutes});
+    function _plan(SwapCalls.Direct[] memory routes, SwapCalls.Discounted[] memory discountRoutes)
+        internal
+        pure
+        returns (SwapCalls.Plan memory fillCall)
+    {
+        fillCall = SwapCalls.Plan({routes: routes, discountRoutes: discountRoutes});
     }
 
     function _directRoute(address routeAdapter, uint256 amountIn, uint256 amountOut)
         internal
         pure
-        returns (ILiquidLaneUniswapXExecutor.FillRoute memory)
+        returns (SwapCalls.Direct memory)
     {
-        return ILiquidLaneUniswapXExecutor.FillRoute({adapter: routeAdapter, amountIn: amountIn, amountOut: amountOut});
+        return SwapCalls.Direct({adapter: routeAdapter, amountIn: amountIn, amountOut: amountOut});
     }
 
     function _discountRoute(address routeAdapter, uint256 amountIn)
         internal
         view
-        returns (ILiquidLaneUniswapXExecutor.DiscountRoute memory)
+        returns (SwapCalls.Discounted memory)
     {
-        return ILiquidLaneUniswapXExecutor.DiscountRoute({
+        return SwapCalls.Discounted({
             adapter: routeAdapter,
             amountIn: amountIn,
             discountSwap: ILiquidLaneAdapter.DiscountSwap({

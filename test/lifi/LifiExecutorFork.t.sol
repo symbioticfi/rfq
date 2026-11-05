@@ -2,6 +2,9 @@
 // Copyright (c) 2026 Symbiotic
 pragma solidity 0.8.28;
 
+import {SwapCalls} from "test/utils/SwapCalls.sol";
+import {IExecutor} from "src/interfaces/IExecutor.sol";
+
 import {ILiquidLaneAdapter} from "../../src/interfaces/ILiquidLaneAdapter.sol";
 import {LiquidLaneLifiExecutor} from "../../src/lifi/LiquidLaneLifiExecutor.sol";
 import {IInputSettler} from "../../src/lifi/interfaces/IInputSettler.sol";
@@ -57,7 +60,15 @@ contract LifiExecutorForkTest is Test {
         bytes32 orderId = IInputSettlerEscrowLike(INPUT_SETTLER).orderIdentifier(order);
 
         vm.prank(owner);
-        executor.finaliseWithCurrentTimestamp(order, _routes(order), new ILiquidLaneLifiExecutor.DiscountRoute[](0));
+        executor.finaliseWithCurrentTimestamp(
+            order,
+            SwapCalls.build(
+                address(inputToken),
+                address(executor),
+                SwapCalls.Plan(_routes(order), new SwapCalls.Discounted[](0)),
+                new IExecutor.Call[](0)
+            )
+        );
 
         assertEq(IInputSettlerEscrowLike(INPUT_SETTLER).orderStatus(orderId), 2, "claimed");
         assertEq(outputToken.balanceOf(recipient), 9 ether, "recipient output");
@@ -115,12 +126,10 @@ contract LifiExecutorForkTest is Test {
     function _routes(IInputSettler.StandardOrder memory order)
         internal
         view
-        returns (ILiquidLaneLifiExecutor.FillRoute[] memory routes)
+        returns (SwapCalls.Direct[] memory routes)
     {
-        routes = new ILiquidLaneLifiExecutor.FillRoute[](1);
-        routes[0] = ILiquidLaneLifiExecutor.FillRoute({
-            adapter: address(adapter), amountIn: order.inputs[0][1], amountOut: 10 ether
-        });
+        routes = new SwapCalls.Direct[](1);
+        routes[0] = SwapCalls.Direct({adapter: address(adapter), amountIn: order.inputs[0][1], amountOut: 10 ether});
     }
 
     function _id(address addr) internal pure returns (bytes32) {
