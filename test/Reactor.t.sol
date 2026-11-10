@@ -23,6 +23,10 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {
+    AccessManagerUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/manager/AccessManagerUpgradeable.sol";
+import {IAccessManager} from "@openzeppelin/contracts/access/manager/IAccessManager.sol";
 
 import {Test} from "forge-std/Test.sol";
 
@@ -1049,6 +1053,80 @@ contract ReactorTest is Test {
         assertEq(outputToken.balanceOf(swapper), 10 ether);
         assertEq(MockRecipeAccount(payable(recipe.account())).connectorInputBeforeSwap(), 10 ether);
         assertEq(rwa.balanceOf(address(recipe)), 0);
+    }
+
+    function testRecipeFillThroughAccessManager() public {
+        (address manager, RecipeRouteBuilder.Recipe memory route) = _accessManagerRecipe();
+        AccessManagerUpgradeable(manager).grantRole(1, address(executor), 0);
+        _fillAccessManagerRecipe(manager, route);
+        assertEq(outputToken.balanceOf(swapper), 10 ether);
+        assertEq(outputToken.balanceOf(IRecipeExecutor(route.executor).account()), 90 ether);
+        assertEq(
+            MockRecipeAccount(payable(IRecipeExecutor(route.executor).account())).connectorInputBeforeSwap(), 10 ether
+        );
+    }
+
+    function testRecipeFillThroughAccessManagerRequiresRole() public {
+        (address manager, RecipeRouteBuilder.Recipe memory route) = _accessManagerRecipe();
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessManager.AccessManagerUnauthorizedCall.selector,
+                address(executor),
+                route.executor,
+                IRecipeExecutor.execute.selector
+            )
+        );
+        _fillAccessManagerRecipe(manager, route);
+        assertEq(rwa.balanceOf(swapper), 100 ether);
+        assertEq(outputToken.balanceOf(swapper), 0);
+        assertEq(outputToken.balanceOf(IRecipeExecutor(route.executor).account()), 100 ether);
+    }
+
+    function testRecipeFillThroughAccessManagerCannotBypassManager() public {
+        (address manager, RecipeRouteBuilder.Recipe memory route) = _accessManagerRecipe();
+        AccessManagerUpgradeable(manager).grantRole(1, address(executor), 0);
+        vm.expectRevert(IRecipeExecutor.InvalidCaller.selector);
+        _fillRecipes(_recipeOrder(10 ether, 10 ether), _oneRecipe(route));
+        assertEq(rwa.balanceOf(swapper), 100 ether);
+        assertEq(outputToken.balanceOf(swapper), 0);
+    }
+
+    function _accessManagerRecipe() internal returns (address manager, RecipeRouteBuilder.Recipe memory route) {
+        manager = address(
+            new TransparentUpgradeableProxy(
+                address(new AccessManagerUpgradeable()),
+                proxyAdminOwner,
+                abi.encodeCall(AccessManagerUpgradeable.initialize, (address(this)))
+            )
+        );
+        IRecipeExecutor recipe = RecipeRouteBuilder.deployReal(vm, manager);
+        outputToken.mint(recipe.account(), 100 ether);
+        route = RecipeRouteBuilder.buildManaged(
+            recipe, address(rwa), address(outputToken), address(executor), 10 ether, 10 ether
+        );
+        adapterFactory.setEntity(route.connector, true);
+        bytes4[] memory selectors = new bytes4[](1);
+        selectors[0] = IRecipeExecutor.execute.selector;
+        AccessManagerUpgradeable(manager).setTargetFunctionRole(address(recipe), selectors, 1);
+    }
+
+    function _fillAccessManagerRecipe(address manager, RecipeRouteBuilder.Recipe memory route) internal {
+        IExecutor.Call[] memory calls = RecipeRouteBuilder.calls(_oneRecipe(route));
+        calls[0] = IExecutor.Call({
+            target: manager,
+            value: 0,
+            data: abi.encodeCall(AccessManagerUpgradeable.execute, (route.executor, calls[0].data))
+        });
+        IReactor.Order memory order = _recipeOrder(10 ether, 10 ether);
+        bytes memory signature = _signOrder(order);
+        vm.prank(filler);
+        executor.fill(
+            order,
+            signature,
+            _recipeInputs(new IReactor.SwapInput[](0), _oneRecipe(route)),
+            new IReactor.DiscountSwapInput[](0),
+            abi.encode(calls)
+        );
     }
 
     function testRecipeFillForwardsProofBearingRuntimeToRealExecutor() public {

@@ -34,6 +34,12 @@ This directory contains the core RFQ settlement contracts used by the Symbiotic 
 
 Each generic call contains `target`, `value` and ABI-encoded `data`. The executors run them in order without adapter-version checks or implicit swap dispatch.
 
+For a recipe whose caller is an OpenZeppelin AccessManager, target that manager with
+`execute(recipeExecutor, recipeCalldata)`. Grant the RFQ Executor immediate access to
+the recipe's execution selector on the manager. The RecipeExecutor continues to hold
+its own MerkleAccount roles. The existing callback supports this route without a new
+Executor deployment; contract tests cover settlement, missing grants and bypass attempts.
+
 - Native RFQ: the Reactor funds registered adapters/connectors from `swapInputs` and `discountSwapInputs`; the callback calls execute swaps and recipes.
 - LI.FI and UniswapX: the input arrives at the executor. The call list must include transfers to each adapter/connector before its swap or recipe.
 - Redstone: each signed liquidation leg may supply a `collateralRecipient` and `calls`. The callback transfers the actual seized collateral to that recipient, executes the calls, then checks actual loan proceeds against repayment and the profit floor. Leaving both empty selects the native Liquid Lane exit with live pricing and collateral clamping.
