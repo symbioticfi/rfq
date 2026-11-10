@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.38;
+pragma solidity ^0.8.28;
 
 import {DeployExecutorBaseScript} from "./deploy/base/DeployExecutorBase.s.sol";
 

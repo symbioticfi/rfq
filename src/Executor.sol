@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Symbiotic
-pragma solidity 0.8.38;
+pragma solidity ^0.8.28;
 
 import {IExecutor} from "./interfaces/IExecutor.sol";
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";

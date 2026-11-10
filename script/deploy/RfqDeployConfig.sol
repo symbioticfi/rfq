@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.38;
+pragma solidity ^0.8.28;
 
 library RfqDeployConfig {
     uint256 internal constant MAINNET_CHAIN_ID = 1;
