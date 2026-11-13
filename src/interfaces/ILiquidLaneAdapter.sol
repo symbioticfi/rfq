@@ -97,6 +97,12 @@ interface ILiquidLaneAdapter {
     /* FUNCTIONS */
 
     /**
+     * @notice Returns the implementation version initialized by the LiquidLane adapter factory.
+     * @return version Adapter version 1 or Merkle connector version 2.
+     */
+    function version() external view returns (uint64 version);
+
+    /**
      * @notice Releases collateral for a funded direct adapter leg.
      * @param swap Direct-caller adapter draw parameters.
      * @dev Assumes `swap.tokenIn` has already been transferred to the adapter before the call.

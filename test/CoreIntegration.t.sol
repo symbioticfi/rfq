@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Symbiotic
-pragma solidity 0.8.28;
+pragma solidity ^0.8.28;
 
 import {Executor} from "../src/Executor.sol";
+import {ExecutorCalls} from "./utils/ExecutorCalls.sol";
 import {Reactor} from "../src/Reactor.sol";
 import {IExecutor} from "../src/interfaces/IExecutor.sol";
 import {
@@ -133,7 +134,7 @@ contract LiquidLaneIntegrationTest is Test {
         IReactor.Order memory order = _order(outputs, 5 ether);
 
         vm.prank(filler);
-        executor.fill(order, _signOrder(order), swap, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, _signOrder(order), swap, abi.encode(calls));
 
         assertEq(rwa.balanceOf(primaryAccount), 5 ether);
         assertEq(outputToken.balanceOf(swapper), 5 ether);
@@ -159,7 +160,7 @@ contract LiquidLaneIntegrationTest is Test {
         IReactor.Order memory order = _order(outputs, 10 ether);
 
         vm.prank(filler);
-        executor.fill(order, _signOrder(order), swapInputs, discountSwapInputs, abi.encode(calls));
+        ExecutorCalls.fill(executor, order, _signOrder(order), swapInputs, discountSwapInputs, abi.encode(calls));
 
         assertEq(rwa.balanceOf(primaryAccount), 4 ether);
         assertEq(rwa.balanceOf(secondaryAccount), 6 ether);
@@ -353,6 +354,10 @@ contract IntegrationAdapterFactory {
 }
 
 contract LiquidLaneAdapterMock is ILiquidLaneAdapter {
+    function version() external pure returns (uint64) {
+        return 1;
+    }
+
     mapping(address token => address account) internal _accounts;
     uint256 public discountSwapCount;
     uint256 public signedSwapCount;

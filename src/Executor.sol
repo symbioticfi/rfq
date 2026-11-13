@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Symbiotic
-pragma solidity 0.8.28;
+pragma solidity ^0.8.28;
 
 import {IExecutor} from "./interfaces/IExecutor.sol";
-import {ILiquidLaneAdapter} from "./interfaces/ILiquidLaneAdapter.sol";
 import {IReactor, NATIVE} from "./interfaces/IReactor.sol";
 
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @title Executor
 /// @notice Caller-gated executor that forwards fills into Reactor and handles execution callbacks.
@@ -62,26 +61,6 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
     function fill(
         IReactor.Order calldata order,
         bytes calldata protocolSignature,
-        IReactor.SwapInput calldata swapInput,
-        bytes calldata executorData
-    ) public onlyCaller {
-        IReactor(REACTOR).fill(order, protocolSignature, swapInput, executorData);
-    }
-
-    /// @inheritdoc IExecutor
-    function fill(
-        IReactor.Order calldata order,
-        bytes calldata protocolSignature,
-        IReactor.SwapInput[] calldata swapInputs,
-        bytes calldata executorData
-    ) public onlyCaller {
-        IReactor(REACTOR).fill(order, protocolSignature, swapInputs, executorData);
-    }
-
-    /// @inheritdoc IExecutor
-    function fill(
-        IReactor.Order calldata order,
-        bytes calldata protocolSignature,
         IReactor.SwapInput[] calldata swapInputs,
         IReactor.DiscountSwapInput[] calldata discountSwapInputs,
         bytes calldata executorData
@@ -92,25 +71,12 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
     /// @inheritdoc IExecutor
     function execute(
         IReactor.Order calldata order,
-        IReactor.SwapInput[] calldata swapInputs,
-        IReactor.DiscountSwapInput[] calldata discountSwapInputs,
+        IReactor.SwapInput[] calldata,
+        IReactor.DiscountSwapInput[] calldata,
         bytes calldata executorData
     ) public {
         if (REACTOR != msg.sender) {
             revert NotReactor();
-        }
-
-        for (uint256 i; i < swapInputs.length; ++i) {
-            ILiquidLaneAdapter(swapInputs[i].adapter).swap(swapInputs[i].swap);
-        }
-        for (uint256 i; i < discountSwapInputs.length; ++i) {
-            ILiquidLaneAdapter(discountSwapInputs[i].adapter)
-                .swap(
-                    discountSwapInputs[i].discountSwap,
-                    discountSwapInputs[i].protocolSignature,
-                    discountSwapInputs[i].recipient,
-                    discountSwapInputs[i].amountIn
-                );
         }
 
         Call[] memory calls = abi.decode(executorData, (Call[]));
@@ -142,12 +108,10 @@ contract Executor is Initializable, OwnableUpgradeable, IExecutor {
 
     /* INTERNAL FUNCTIONS */
 
-    /// @dev Returns whether `caller` can invoke fill entrypoints.
+    /// @dev Returns whether `caller` can invoke the fill entrypoint.
     function _isCaller(address caller) internal view returns (bool) {
         for (uint256 i; i < callers.length; ++i) {
-            if (callers[i] == caller) {
-                return true;
-            }
+            if (callers[i] == caller) return true;
         }
         return false;
     }

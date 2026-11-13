@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 Symbiotic
-pragma solidity 0.8.28;
+pragma solidity ^0.8.28;
 
 import {DISCOUNT_PRECISION, ILiquidLaneAdapter} from "../interfaces/ILiquidLaneAdapter.sol";
+import {IExecutor} from "src/interfaces/IExecutor.sol";
 import {IOperationCallback} from "./interfaces/IOperationCallback.sol";
 import {Id, IMorpho, IMorphoLiquidateCallback, MarketParams, Position} from "./interfaces/IMorpho.sol";
 
+import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 interface IOevLiquidLaneAdapter is ILiquidLaneAdapter {
     function minDiscount(address tokenToRedeem) external view returns (uint256 ppm);
@@ -20,20 +22,31 @@ interface IOevLiquidLaneAdapter is ILiquidLaneAdapter {
 
 /// @title SymbioticOevSolver
 /// @notice RedStone OEV callback that liquidates Morpho Blue positions and exits seized collateral through a
-///         Symbiotic LiquidLane adapter.
+///         LiquidLane or signed generic calls, including Merkle recipes.
 contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, ReentrancyGuard {
     using SafeERC20 for IERC20;
+    using Address for address;
 
     /* ERRORS */
 
-    error InvalidAuth();
-    error NotExecutor();
-    error NotMorpho();
-    error NotOwner();
     error InsufficientLoanProceeds();
+
+    error InvalidAuth();
+
+    error InvalidExit();
+
+    error NotExecutor();
+
+    error NotMorpho();
+
+    error NotOwner();
+
     error ProfitBelowMin();
+
     error SwapOutputBelowMin();
+
     error TransferFailed();
+
     error ZeroAddress();
 
     /* CONSTANTS */
@@ -111,6 +124,9 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         address borrower;
         uint256 maxSeizeAssets;
         uint256 minProfit;
+        // Zero selects the native LiquidLane exit; otherwise fund this recipient and execute the signed calls.
+        address collateralRecipient;
+        IExecutor.Call[] calls;
     }
 
     struct CallbackContext {
@@ -118,6 +134,8 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         address collateralToken;
         uint256 seizedAssets;
         uint256 minProfit;
+        address collateralRecipient;
+        IExecutor.Call[] calls;
     }
 
     struct LegOutcome {
@@ -209,19 +227,19 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
         uint256 seizedBalance = IERC20(ctx.collateralToken).balanceOf(address(this));
         if (seizedBalance < ctx.seizedAssets) revert TransferFailed();
 
-        uint256 amountOut = _adapterOut(ctx);
-        uint256 minLoanOut = repaidAssets + ctx.minProfit;
-        if (amountOut < minLoanOut) revert SwapOutputBelowMin();
-
         uint256 loanBefore = IERC20(ctx.loanToken).balanceOf(address(this));
-        IERC20(ctx.collateralToken).safeTransfer(LIQUID_LANE_ADAPTER, ctx.seizedAssets);
-
-        ILiquidLaneAdapter(LIQUID_LANE_ADAPTER)
-            .swap(
-                ILiquidLaneAdapter.Swap({
-                recipient: address(this), tokenIn: ctx.collateralToken, amountIn: ctx.seizedAssets, amountOut: amountOut
-            })
-            );
+        if (ctx.collateralRecipient == address(0)) {
+            uint256 amountOut = _adapterOut(ctx);
+            if (amountOut < repaidAssets + ctx.minProfit) revert SwapOutputBelowMin();
+            IERC20(ctx.collateralToken).safeTransfer(LIQUID_LANE_ADAPTER, ctx.seizedAssets);
+            ILiquidLaneAdapter(LIQUID_LANE_ADAPTER)
+                .swap(ILiquidLaneAdapter.Swap(address(this), ctx.collateralToken, ctx.seizedAssets, amountOut));
+        } else {
+            IERC20(ctx.collateralToken).safeTransfer(ctx.collateralRecipient, ctx.seizedAssets);
+            for (uint256 i; i < ctx.calls.length; ++i) {
+                ctx.calls[i].target.functionCallWithValue(ctx.calls[i].data, ctx.calls[i].value);
+            }
+        }
 
         uint256 gained = IERC20(ctx.loanToken).balanceOf(address(this)) - loanBefore;
         if (gained < repaidAssets) revert InsufficientLoanProceeds();
@@ -258,6 +276,9 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
                 || usedAuctionKey[op.auth.auctionKey]
         ) {
             revert InvalidAuth();
+        }
+        for (uint256 i; i < op.legs.length; ++i) {
+            if ((op.legs[i].collateralRecipient == address(0)) != (op.legs[i].calls.length == 0)) revert InvalidExit();
         }
         bytes32 legsHash = keccak256(abi.encode(op.legs));
         bytes32 digest = _authDigest(op.auth, legsHash);
@@ -316,7 +337,9 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
                 loanToken: params.loanToken,
                 collateralToken: params.collateralToken,
                 seizedAssets: seizeAssets,
-                minProfit: leg.minProfit
+                minProfit: leg.minProfit,
+                collateralRecipient: leg.collateralRecipient,
+                calls: leg.calls
             })
         );
         try IMorpho(MORPHO).liquidate(params, leg.borrower, seizeAssets, 0, cbData) returns (
@@ -345,15 +368,13 @@ contract SymbioticOevSolver is IOperationCallback, IMorphoLiquidateCallback, Ree
     }
 
     function _adapterOut(CallbackContext memory ctx) internal returns (uint256 amountOut) {
-        uint256 rateOut = _adapterRateOut(ctx.collateralToken, ctx.seizedAssets);
-        uint256 maxAssets = IOevLiquidLaneAdapter(LIQUID_LANE_ADAPTER).getMaxAssets(ctx.collateralToken);
-        return Math.min(rateOut, maxAssets);
-    }
-
-    function _adapterRateOut(address collateralToken, uint256 seizedAssets) internal view returns (uint256 amountOut) {
-        uint256 raw = IOevLiquidLaneAdapter(LIQUID_LANE_ADAPTER).getAmountOut(collateralToken, seizedAssets);
-        uint256 discount = IOevLiquidLaneAdapter(LIQUID_LANE_ADAPTER).minDiscount(collateralToken);
-        return Math.mulDiv(raw, DISCOUNT_PRECISION - discount, DISCOUNT_PRECISION);
+        IOevLiquidLaneAdapter adapter = IOevLiquidLaneAdapter(LIQUID_LANE_ADAPTER);
+        uint256 raw = adapter.getAmountOut(ctx.collateralToken, ctx.seizedAssets);
+        uint256 discount = adapter.minDiscount(ctx.collateralToken);
+        return Math.min(
+            Math.mulDiv(raw, DISCOUNT_PRECISION - discount, DISCOUNT_PRECISION),
+            adapter.getMaxAssets(ctx.collateralToken)
+        );
     }
 
     function _failureCode(bytes memory err) internal pure returns (uint8 status, uint8 reason) {
