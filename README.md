@@ -1,5 +1,3 @@
-![Symbiotic RFQ](public/lockup.png)
-
 # Reactor Contracts
 
 This directory contains the core RFQ settlement contracts used by the Symbiotic instant redemption flow. The settlement surfaces are:
