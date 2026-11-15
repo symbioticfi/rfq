@@ -75,7 +75,7 @@ production contracts have no dependency on the recipe interpreter schema.
 
 ## Test Locally
 
-Use Foundry `v1.9.0`, Node.js from [.nvmrc](.nvmrc), pnpm `12.16.1`, Python `3.15.2`, and pre-commit `4.7.0`. Run commands from the repository root:
+Use Solidity `0.8.38`, Foundry `v1.9.0`, Node.js from [.nvmrc](.nvmrc), pnpm `12.21.0`, Python `3.15.2`, and pre-commit `4.7.0`. Run commands from the repository root:
 
 ```bash
 forge build
@@ -83,6 +83,8 @@ forge test --isolate
 forge fmt --check
 pre-commit run --all-files
 ```
+
+CI installs the committed pnpm lockfile and runs the same pre-commit checks, including gas and size snapshot validation, before the full Foundry suite.
 
 Recipe tests cover all four executors, mixed LiquidLane/recipe routes, multiple bound accounts, caller and callback authorization, caller-selected funding recipients, absent or reverting recipe/account metadata, version-1 adapters and version-2 connectors, exact recipe calldata, commitment rejection, output shortfall, native outputs, and atomic rollback. They also deploy pinned upstream RecipeExecutor bytecode and forward managed-action runtime data with Merkle proofs. See [fixture provenance and reproduction](test/fixtures/SOURCE.md) for the real-contract and mock boundaries. The optional mainnet and Sepolia fork suites require `ETH_RPC_URL` and `ETH_RPC_URL_SEPOLIA`, respectively.
 
