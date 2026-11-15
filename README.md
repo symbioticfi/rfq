@@ -1,4 +1,4 @@
-![Symbiotic RFQ](../frontend/public/lockup.png)
+![Symbiotic RFQ](public/lockup.png)
 
 # Reactor Contracts
 
