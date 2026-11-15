@@ -40,7 +40,8 @@ def report_tables(output: str) -> str:
 
 
 def main() -> None:
-    run_forge("build")
+    # Old compiler-profile artifacts change Foundry's contract labels and size rows.
+    run_forge("build", "--force")
     sizes = report_tables(run_forge("build", "--sizes"))
     test_output = run_forge(
         "test",
