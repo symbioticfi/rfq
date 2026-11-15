@@ -1,8 +1,8 @@
 {
   "lib/core": {
     "branch": {
-      "name": "delegator-simplify",
-      "rev": "65d5226eee35de793c6af46e3ca1f75d1b36ba11"
+      "name": "main",
+      "rev": "25a065a3dd71150a588162bd2ad4833bbd4e2423"
     }
   },
   "lib/forge-std": {
@@ -13,8 +13,14 @@
   },
   "lib/openzeppelin-contracts": {
     "tag": {
-      "name": "v5.5.0",
-      "rev": "fcbae5394ae8ad52d8e580a3477db99814b9d565"
+      "name": "v5.7.0",
+      "rev": "cab19933c33c2ad1d4c7a84864a3601dddfd16f3"
+    }
+  },
+  "lib/openzeppelin-contracts-upgradeable": {
+    "tag": {
+      "name": "v5.7.0",
+      "rev": "14f52c54d3a1eefbda3d4071efba24d3c1e07e8a"
     }
   }
 }
