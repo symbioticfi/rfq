@@ -1,0 +1,40 @@
+name: test
+
+on:
+  pull_request:
+    branches: [stage]
+  push:
+    branches: [stage]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  forge-test:
+    name: Foundry project
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: bullfrogsec/bullfrog@7dee337d4575320b6d8cbe9a56d48d2fb765963a # v0.11.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+        with:
+          version: v1.9.0
+
+      - name: Install pinned dependencies
+        run: bash script/install-dependencies.sh
+
+      - name: Build contracts and deployment scripts
+        run: forge build --sizes
+
+      - name: Run Forge tests
+        run: forge test --isolate -vvv

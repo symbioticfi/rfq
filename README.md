@@ -26,12 +26,15 @@ This directory contains the core RFQ settlement contracts used by the Symbiotic 
 
 ## Test locally
 
-This folder is part of the root Foundry workspace, so run commands from the repository root:
+Install [Foundry](https://getfoundry.sh/introduction/installation/) (CI uses v1.9.0), then run from the repository root:
 
 ```bash
+bash script/install-dependencies.sh
 forge build
-forge test --match-path rfq/reactor/test/Reactor.t.sol
+forge test --isolate
 ```
+
+The installer pins Forge Standard Library, OpenZeppelin Contracts, and Solady to exact commits. The `test` workflow builds the contracts and deployment scripts and runs the Reactor tests on pull requests into `stage` and pushes to `stage`.
 
 ## Deploy
 
