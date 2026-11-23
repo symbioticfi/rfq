@@ -27,6 +27,8 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     using SafeERC20 for IERC20;
     using Address for address;
 
+    error UnexpectedCallback();
+
     /// @notice EIP-712 typehash wrapping a LI.FI registration message so signatures are domain-bound.
     bytes32 public constant LIFI_REGISTRATION_TYPEHASH = keccak256("LifiRegistration(bytes32 messageHash)");
 
@@ -41,6 +43,8 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
 
     /// @inheritdoc ILiquidLaneLifiExecutor
     address[] public callers;
+
+    bytes32 private transient _expectedExecutionHash;
 
     /* CONSTRUCTOR */
 
@@ -84,7 +88,10 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         bytes32 executorId = bytes32(uint256(uint160(address(this))));
         IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
         solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
-        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, abi.encode(fillCall, calls));
+        bytes memory executionData = abi.encode(fillCall, calls);
+        _expectedExecutionHash = keccak256(executionData);
+        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, executionData);
+        if (_expectedExecutionHash != bytes32(0)) revert UnexpectedCallback();
     }
 
     /* IINPUTCALLBACK */
@@ -92,6 +99,9 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     /// @notice Called by the LI.FI input settler during finalise, after inputs are transferred here.
     function orderFinalised(uint256[2][] calldata, bytes calldata executionData) external {
         if (INPUT_SETTLER != msg.sender) revert NotInputSettler();
+        bytes32 expectedHash = _expectedExecutionHash;
+        if (expectedHash == bytes32(0) || expectedHash != keccak256(executionData)) revert UnexpectedCallback();
+        _expectedExecutionHash = bytes32(0);
 
         (FillCall memory fillCall, IExecutor.Call[] memory calls) =
             abi.decode(executionData, (FillCall, IExecutor.Call[]));
