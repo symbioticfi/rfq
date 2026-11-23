@@ -25,6 +25,8 @@ import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/crypt
 contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgradeable, ILiquidLaneLifiExecutor {
     using SafeERC20 for IERC20;
 
+    error UnexpectedCallback();
+
     /// @notice EIP-712 typehash wrapping a LI.FI registration message so signatures are domain-bound.
     bytes32 public constant LIFI_REGISTRATION_TYPEHASH = keccak256("LifiRegistration(bytes32 messageHash)");
 
@@ -39,6 +41,8 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
 
     /// @inheritdoc ILiquidLaneLifiExecutor
     address[] public callers;
+
+    bytes32 private transient _expectedExecutionHash;
 
     /* CONSTRUCTOR */
 
@@ -79,21 +83,18 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
         bytes32 executorId = bytes32(uint256(uint160(address(this))));
         IInputSettler.SolveParams[] memory solveParams = new IInputSettler.SolveParams[](1);
         solveParams[0] = IInputSettler.SolveParams({timestamp: uint32(block.timestamp), solver: executorId});
-        IInputSettler(INPUT_SETTLER)
-            .finalise(
-                order,
-                solveParams,
-                executorId,
-                abi.encode(
-                    FillCall({
-                    orderId: IInputSettler(INPUT_SETTLER).orderIdentifier(order),
-                    output: order.outputs[0],
-                    fillDeadline: order.fillDeadline,
-                    routes: routes,
-                    discountRoutes: discountRoutes
-                })
-                )
-            );
+        bytes memory executionData = abi.encode(
+            FillCall({
+                orderId: IInputSettler(INPUT_SETTLER).orderIdentifier(order),
+                output: order.outputs[0],
+                fillDeadline: order.fillDeadline,
+                routes: routes,
+                discountRoutes: discountRoutes
+            })
+        );
+        _expectedExecutionHash = keccak256(executionData);
+        IInputSettler(INPUT_SETTLER).finalise(order, solveParams, executorId, executionData);
+        if (_expectedExecutionHash != bytes32(0)) revert UnexpectedCallback();
     }
 
     /* IINPUTCALLBACK */
@@ -101,6 +102,9 @@ contract LiquidLaneLifiExecutor is Initializable, OwnableUpgradeable, EIP712Upgr
     /// @notice Called by the LI.FI input settler during finalise, after inputs are transferred here.
     function orderFinalised(uint256[2][] calldata inputs, bytes calldata executionData) external {
         if (INPUT_SETTLER != msg.sender) revert NotInputSettler();
+        bytes32 expectedHash = _expectedExecutionHash;
+        if (expectedHash == bytes32(0) || expectedHash != keccak256(executionData)) revert UnexpectedCallback();
+        _expectedExecutionHash = bytes32(0);
 
         FillCall memory fillCall = abi.decode(executionData, (FillCall));
 
