@@ -364,6 +364,12 @@ contract LiquidLaneLifiExecutorTest is Test {
         executor.orderFinalised(_inputs(10 ether), abi.encode(_unsolicitedFillCall()));
     }
 
+    function testOrderFinalisedRejectsUnsolicitedSettlerCallback() public {
+        vm.expectRevert(LiquidLaneLifiExecutor.UnexpectedCallback.selector);
+        vm.prank(address(inputSettler));
+        executor.orderFinalised(_inputs(10 ether), "");
+    }
+
     /* EIP-1271 REGISTRATION */
 
     function testIsValidSignatureAcceptsCallerWithRegistrationDomain() public {
